@@ -62,17 +62,7 @@ const shopify = shopifyApp({
     },
   },
   billing: {
-    "Basic Plan": {
-      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
-      lineItems: [
-        {
-          amount: 9,
-          currencyCode: "USD",
-          interval: BillingInterval.Every30Days,
-        }
-      ],
-      trialDays: 14,
-    },
+
     "Pro Plan": {
       replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
       lineItems: [

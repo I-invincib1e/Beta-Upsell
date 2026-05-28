@@ -3,11 +3,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { topic, shop, session, admin, payload } = await authenticate.webhook(request);
-
-  if (!admin) {
-    return new Response();
-  }
+  const { topic, payload } = await authenticate.webhook(request);
 
   // Shopify Mandatory GDPR Webhooks
   // Since we only store essential order data tied to upsells, 

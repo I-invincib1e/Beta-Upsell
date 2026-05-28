@@ -1,13 +1,14 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
-import { Page, Layout, Card, BlockStack, Text, Button, Grid, Badge, List } from "@shopify/polaris";
+import { Page, Layout, Card, BlockStack, Text, Button, Grid, Badge, List, Box } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { calculateRemainingTrialDays } from "../utils/billing";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { billing } = await authenticate.admin(request);
   const billingCheck = await billing.check({
-    plans: ["Basic Plan", "Pro Plan"],
+    // @ts-ignore
+    plans: ["Pro Plan"],
     isTest: true,
   });
 
@@ -23,12 +24,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const planToSelect = formData.get("plan") as string;
 
-  if (planToSelect !== "Free Plan" && planToSelect !== "Basic Plan" && planToSelect !== "Pro Plan") {
+  if (planToSelect !== "Free Plan" && planToSelect !== "Pro Plan") {
     return json({ error: "Invalid plan selected" }, { status: 400 });
   }
 
   const billingCheck = await billing.check({
-    plans: ["Basic Plan", "Pro Plan"],
+    // @ts-ignore
+    plans: ["Pro Plan"],
     isTest: true,
   });
 
@@ -60,6 +62,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   // Request the new charge
   await billing.request({
+    // @ts-ignore
     plan: planToSelect,
     isTest: true,
     returnUrl: `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/app/pricing`,
@@ -114,38 +117,6 @@ export default function Pricing() {
                       loading={isSubmitting}
                     >
                       {activePlan === "Free Plan" ? "Current Plan" : "Downgrade to Free"}
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            </div>
-          </Grid.Cell>
-
-          <Grid.Cell columnSpan={{ xs: 6, sm: 2, md: 2, lg: 4, xl: 4 }}>
-            <div className="pricing-card-wrapper">
-              <Card>
-                <div className="pricing-card-content">
-                  <BlockStack gap="400">
-                    <Text as="h2" variant="headingLg">Basic Plan</Text>
-                    <Text as="h3" variant="heading3xl">$9 <Text as="span" variant="bodyMd" tone="subdued">/month</Text></Text>
-                    {activePlan === "Basic Plan" && <Badge tone="success">Active Plan</Badge>}
-                    
-                    <List>
-                      <List.Item>Unlimited Active Offers</List.Item>
-                      <List.Item>Cart & Product Page Upsells</List.Item>
-                      <List.Item>Basic Analytics</List.Item>
-                      <List.Item>14-Day Free Trial</List.Item>
-                    </List>
-                  </BlockStack>
-                  <div style={{ marginTop: '24px' }}>
-                    <Button 
-                      size="large" 
-                      fullWidth 
-                      disabled={activePlan === "Basic Plan" || isSubmitting}
-                      onClick={() => handleSelectPlan("Basic Plan")}
-                      loading={isSubmitting}
-                    >
-                      {activePlan === "Basic Plan" ? "Current Plan" : "Select Basic"}
                     </Button>
                   </div>
                 </div>

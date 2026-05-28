@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState } from 'react';
 import {
   extend,
@@ -20,12 +21,13 @@ extend("Checkout::PostPurchase::ShouldRender", async ({ inputData, storage }) =>
   const shopDomain = inputData.shop.domain;
   
   try {
-    const response = await fetch(`${APP_URL}/api/offers?shop=${shopDomain}&placement=post_purchase`);
+    const productIds = inputData.initialPurchase.lineItems.map((item: any) => item.product.id).join(",");
+    const response = await fetch(`${APP_URL}/api/offers?shop=${shopDomain}&placement=post_purchase&productIds=${encodeURIComponent(productIds)}`);
     if (!response.ok) throw new Error("Failed to fetch offer");
     
     const data = await response.json();
     
-    if (data.offer && data.offer.variantId) {
+    if (data.offer && data.offer.upsellProducts && data.offer.upsellProducts.length > 0) {
       await storage.update({ offer: data.offer });
       return { render: true };
     }
@@ -76,36 +78,33 @@ export function App({ extensionPoint, storage }) {
   }
   
   const finalPrice = Math.max(0, originalPrice - discountAmount);
-  const formattedFinalPrice = `$${finalPrice.toFixed(2)}`;
-  const formattedOriginalPrice = `$${originalPrice.toFixed(2)}`;
 
   const handleAccept = async () => {
     setIsAccepting(true);
     setErrorText("");
     
     try {
-      // 1. Calculate Changeset
-      const changes = await calculateChangeset({ 
-        changes: [
-          { 
-            type: "add_variant", 
-            variantId: offer.variantId, 
-            quantity: 1, 
-            discount: { 
-              value: offer.discountValue, 
-              valueType: offer.discountType === "percentage" ? "percentage" : "fixed_amount",
-              title: "Special Offer"
-            } 
-          }
-        ] 
-      });
+      // Create changes for all upsell products
+      const changes = offer.upsellProducts.map((product: any) => ({
+        type: "add_variant", 
+        variantId: Number(product.variantId), 
+        quantity: 1, 
+        discount: { 
+          value: offer.discountValue, 
+          valueType: offer.discountType === "percentage" ? "percentage" : "fixed_amount",
+          title: "Special Offer"
+        } 
+      }));
 
-      if (changes.errors && changes.errors.length > 0) {
-        throw new Error(changes.errors[0].message);
+      // 1. Calculate Changeset
+      const changeset = await calculateChangeset({ changes });
+
+      if (changeset.errors && changeset.errors.length > 0) {
+        throw new Error(changeset.errors[0].message);
       }
 
       // 2. Apply Changeset (This actually charges the card!)
-      const applyResult = await applyChangeset(changes.calculatedPurchase?.token);
+      const applyResult = await applyChangeset(changeset.calculatedPurchase?.token);
       
       if (applyResult.status === "success") {
         // 3. Track success in our analytics
@@ -152,42 +151,67 @@ export function App({ extensionPoint, storage }) {
 
   return (
     <BlockStack spacing="loose">
-      <CalloutBanner title="Wait! We have a special offer just for you.">
-        Add this item to your order with 1-click. No need to re-enter your payment details.
+      <CalloutBanner title="Special One-Time Offer">
+        Please review the exclusive offers below.
       </CalloutBanner>
       
-      {errorText && (
-        <TextBlock color="critical">{errorText}</TextBlock>
-      )}
-
       <Layout
         maxInlineSize={0.95}
         media={[
-          { viewportSize: "small", sizes: [1, 30, 1] },
-          { viewportSize: "medium", sizes: [300, 30, 0.5] },
-          { viewportSize: "large", sizes: [400, 30, 0.33] },
+          { viewportSize: 'small', sizes: [1, 0, 1], maxInlineSize: 0.9 },
+          { viewportSize: 'medium', sizes: [532, 0, 1], maxInlineSize: 420 },
+          { viewportSize: 'large', sizes: [560, 38, 340] },
         ]}
       >
         <View>
-          <Image source={offer.productImage || "https://cdn.shopify.com/s/files/1/0533/2089/files/placeholder-images-image_large.png"} />
+          <BlockStack spacing="loose">
+            <TextContainer>
+              <Heading>Add to your order</Heading>
+              <TextBlock>
+                {offer.discountType === 'percentage' 
+                  ? `Get ${offer.discountValue}% off instantly when you add these to your order.` 
+                  : `Save $${offer.discountValue} instantly when you add these to your order.`}
+              </TextBlock>
+            </TextContainer>
+            <BlockStack spacing="loose">
+              {offer.upsellProducts.map((product: any) => (
+                <Layout key={product.id} media={[{ viewportSize: 'small', sizes: [100, 1] }]} spacing="base">
+                  {product.image && <Image source={product.image} />}
+                  <BlockStack spacing="none">
+                    <TextBlock>{product.title}</TextBlock>
+                    <TextBlock appearance="subdued">
+                      ${product.originalPrice}
+                    </TextBlock>
+                  </BlockStack>
+                </Layout>
+              ))}
+            </BlockStack>
+          </BlockStack>
         </View>
         <View />
-        <BlockStack spacing="xloose">
-          <TextContainer>
-            <Heading>{offer.productTitle || offer.name}</Heading>
-            <TextBlock>
-              Get it now for only <TextBlock emphasized>{formattedFinalPrice}</TextBlock> (was {formattedOriginalPrice})!
-            </TextBlock>
-          </TextContainer>
-          <BlockStack spacing="tight">
-            <Button submit onPress={handleAccept} loading={isAccepting} disabled={isDeclining}>
-              Pay {formattedFinalPrice} Now
+        <View>
+          <BlockStack spacing="base">
+            <Button
+              onPress={handleAccept}
+              submit
+              loading={isAccepting}
+              disabled={isDeclining}
+            >
+              Add to Order
             </Button>
-            <Button onPress={handleDecline} disabled={isAccepting || isDeclining} plain>
-              No thanks, decline offer
+            <Button
+              onPress={handleDecline}
+              subdued
+              loading={isDeclining}
+              disabled={isAccepting}
+            >
+              Decline Offer
             </Button>
+            {errorText && (
+              <TextBlock appearance="critical">{errorText}</TextBlock>
+            )}
           </BlockStack>
-        </BlockStack>
+        </View>
       </Layout>
     </BlockStack>
   );

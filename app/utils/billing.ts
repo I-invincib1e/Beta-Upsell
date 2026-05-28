@@ -13,29 +13,5 @@ export function calculateRemainingTrialDays(
   existingTrialDays: number | undefined,
   existingCreatedAt: string | Date | undefined
 ): number {
-  if (!existingSubName) {
-    // If they have no existing subscription, let the default billing config handle it.
-    // However, if we must return a number, returning 7 for Basic Plan is our default.
-    return planToSelect === "Basic Plan" ? 7 : 0;
-  }
-
-  if (existingSubName === "Basic Plan") {
-    // If they are upgrading to Pro DURING a basic trial, we carry over the remaining trial days
-    if (planToSelect === "Pro Plan" && existingTrialDays && existingCreatedAt) {
-      const createdDate = new Date(existingCreatedAt);
-      const now = new Date();
-      const diffTime = Math.abs(now.getTime() - createdDate.getTime());
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      
-      const remainingTrial = existingTrialDays - diffDays;
-      
-      return remainingTrial > 0 ? remainingTrial : 0;
-    } else {
-      // If they already used the Basic trial and are resubscribing to Basic, NO trial.
-      return 0;
-    }
-  }
-
-  // If they had Pro, they never get a trial on downgrade
   return 0;
 }

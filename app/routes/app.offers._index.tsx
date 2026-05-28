@@ -5,10 +5,8 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session, billing } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   
-  // 1. Remove forced billing for Freemium model
-
   const shopDomain = session.shop;
 
   const store = await prisma.store.findUnique({
@@ -42,22 +40,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       if (store) {
         const activeCartOffers = await prisma.offer.findMany({
           where: { storeId: store.id, type: "cart", isActive: true },
-          select: { id: true, name: true, upsellProductId: true, discountType: true, discountValue: true }
+          select: { id: true, name: true, triggerType: true, triggerProductIds: true, upsellProductIds: true, discountType: true, discountValue: true }
         });
 
         const enrichedOffers = await Promise.all(activeCartOffers.map(async (offer) => {
           const response = await admin.graphql(
-            `query getProductHandle($id: ID!) {
-              product(id: $id) {
-                handle
+            `query getProductHandles($ids: [ID!]!) {
+              nodes(ids: $ids) {
+                ... on Product {
+                  id
+                  handle
+                }
               }
             }`,
-            { variables: { id: offer.upsellProductId } }
+            { variables: { ids: offer.upsellProductIds } }
           );
           const data = await response.json();
+          const handles = data.data?.nodes?.map((n: any) => n?.handle).filter(Boolean) || [];
           return {
             ...offer,
-            handle: data.data?.product?.handle || null
+            handles
           };
         }));
 

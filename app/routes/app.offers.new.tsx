@@ -12,6 +12,7 @@ import {
   Text,
   Badge,
   Banner,
+  List,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { useNavigate, useSubmit, useActionData, useNavigation, useLoaderData, useFetcher } from "@remix-run/react";
@@ -25,7 +26,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // 1. Remove forced billing for Freemium model
 
   const billingCheck = await billing.check({
-    plans: ["Basic Plan", "Pro Plan"],
+    // @ts-ignore
+    plans: ["Pro Plan"],
     isTest: true,
   });
 
@@ -61,13 +63,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const formData = await request.formData();
   const offerName = formData.get("offerName") as string;
   const placement = formData.get("placement") as string;
-  const triggerProductId = formData.get("triggerProductId") as string;
-  const upsellProductId = formData.get("upsellProductId") as string;
+  const triggerType = formData.get("triggerType") as string;
+  const triggerProductIdsStr = formData.get("triggerProductIds") as string;
+  const upsellProductIdsStr = formData.get("upsellProductIds") as string;
   const discountType = formData.get("discountType") as string;
   const discountValue = parseFloat(formData.get("discountValue") as string) || 0;
 
-  if (!offerName || !upsellProductId) {
-    return json({ error: "Offer name and Upsell Product are required." }, { status: 400 });
+  const triggerProductIds = JSON.parse(triggerProductIdsStr || "[]");
+  const upsellProductIds = JSON.parse(upsellProductIdsStr || "[]");
+
+  if (!offerName || upsellProductIds.length === 0) {
+    return json({ error: "Offer name and at least one Upsell Product are required." }, { status: 400 });
   }
 
   if (discountValue < 0) {
@@ -79,7 +85,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   const billingCheck = await billing.check({
-    plans: ["Basic Plan", "Pro Plan"],
+    // @ts-ignore
+    plans: ["Pro Plan"],
     isTest: true,
   });
 
@@ -87,9 +94,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   let store = await prisma.store.findUnique({ where: { shopDomain }, include: { offers: { where: { isActive: true } } } });
   
-  if (store && activePlan === "Basic Plan" && (placement === "post_purchase" || placement === "checkout" || placement === "thank_you")) {
-    return json({ error: "This placement is only available on the Pro Plan." }, { status: 403 });
-  }
   if (store && activePlan === null && (placement === "post_purchase" || placement === "checkout" || placement === "thank_you")) {
     return json({ error: "This placement is only available on the Pro Plan." }, { status: 403 });
   }
@@ -102,16 +106,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         shopDomain,
         accessToken: session.accessToken,
       },
+      include: { offers: true },
     });
   }
 
-  const newOffer = await prisma.offer.create({
+  await prisma.offer.create({
     data: {
       storeId: store.id,
       name: offerName,
       type: placement,
-      triggerProductIds: triggerProductId ? [triggerProductId] : [],
-      upsellProductId: upsellProductId,
+      triggerType: triggerType || "SPECIFIC_PRODUCTS",
+      triggerProductIds: triggerProductIds,
+      upsellProductIds: upsellProductIds,
       discountType,
       discountValue,
       isActive: true,
@@ -121,22 +127,26 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (placement === "cart") {
     const activeCartOffers = await prisma.offer.findMany({
       where: { storeId: store.id, type: "cart", isActive: true },
-      select: { id: true, name: true, upsellProductId: true, discountType: true, discountValue: true }
+      select: { id: true, name: true, triggerType: true, triggerProductIds: true, upsellProductIds: true, discountType: true, discountValue: true }
     });
 
     const enrichedOffers = await Promise.all(activeCartOffers.map(async (offer) => {
       const response = await admin.graphql(
-        `query getProductHandle($id: ID!) {
-          product(id: $id) {
-            handle
+        `query getProductHandles($ids: [ID!]!) {
+          nodes(ids: $ids) {
+            ... on Product {
+              id
+              handle
+            }
           }
         }`,
-        { variables: { id: offer.upsellProductId } }
+        { variables: { ids: offer.upsellProductIds } }
       );
       const data = await response.json();
+      const handles = data.data?.nodes?.map((n: any) => n?.handle).filter(Boolean) || [];
       return {
         ...offer,
-        handle: data.data?.product?.handle || null
+        handles
       };
     }));
 
@@ -172,40 +182,45 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 export default function NewOffer() {
   const navigate = useNavigate();
   const submit = useSubmit();
-  const actionData = useActionData<typeof action>();
+  const actionData = useActionData<any>();
   const navigation = useNavigation();
   const isSaving = navigation.state === "submitting";
   const fetcher = useFetcher<typeof loader>();
 
   const [offerName, setOfferName] = useState("");
   const [placement, setPlacement] = useState("cart");
-  const [triggerProductId, setTriggerProductId] = useState("");
-  const [triggerProductTitle, setTriggerProductTitle] = useState("");
-  const [upsellProductId, setUpsellProductId] = useState("");
-  const [upsellProductTitle, setUpsellProductTitle] = useState("");
+  
+  const [triggerType, setTriggerType] = useState("SPECIFIC_PRODUCTS"); // SPECIFIC_PRODUCTS, SPECIFIC_COLLECTIONS, ALL_PRODUCTS
+  const [triggerItems, setTriggerItems] = useState<{id: string, title: string}[]>([]);
+  const [upsellItems, setUpsellItems] = useState<{id: string, title: string}[]>([]);
+
   const [discountType, setDiscountType] = useState("percentage");
   const [discountValue, setDiscountValue] = useState("");
 
-  const selectProduct = async (setterId: (id: string) => void, setterTitle: (title: string) => void) => {
+  const selectResource = async (type: 'product' | 'collection', setterItems: (items: any[]) => void) => {
     // @ts-ignore
-    const selected = await shopify.resourcePicker({ type: 'product', multiple: false, action: 'select' });
+    const selected = await shopify.resourcePicker({ type, multiple: true, action: 'select' });
     if (selected && selected.length > 0) {
-      setterId(selected[0].id);
-      setterTitle(selected[0].title);
+      setterItems(selected.map((item: any) => ({ id: item.id, title: item.title })));
     }
   };
 
-  // Debounce and fetch recommendations when trigger product changes
+  // Recommendations: For V2, if multiple triggers, we could just fetch for the first one, or skip.
+  const firstTriggerId = triggerItems.length > 0 ? triggerItems[0].id : null;
   useEffect(() => {
-    if (triggerProductId && triggerProductId.includes("gid://shopify/Product/")) {
+    if (triggerType === "SPECIFIC_PRODUCTS" && firstTriggerId && firstTriggerId.includes("gid://shopify/Product/")) {
       const timeoutId = setTimeout(() => {
-        fetcher.load(`?triggerProductId=${encodeURIComponent(triggerProductId)}`);
+        fetcher.load(`?triggerProductId=${encodeURIComponent(firstTriggerId)}`);
       }, 500);
       return () => clearTimeout(timeoutId);
     }
-  }, [triggerProductId]);
+  }, [firstTriggerId, triggerType]);
 
-  const { recommendations = [], activePlan, activeOfferCount } = fetcher.data || useLoaderData<typeof loader>();
+  const loaderData = useLoaderData<typeof loader>();
+  const data: any = fetcher.data || loaderData;
+  const recommendations = data?.recommendations || [];
+  const activePlan = data?.activePlan;
+  const activeOfferCount = data?.activeOfferCount || 0;
 
   const isLimitReached = (activePlan === null && activeOfferCount >= 1);
 
@@ -213,19 +228,19 @@ export default function NewOffer() {
     { label: "Cart Drawer", value: "cart" },
     { label: "Product Page FBT", value: "product_page" },
     { 
-      label: (activePlan === "Basic Plan" || activePlan === null) ? "Post-Purchase (Pro Only)" : "Post-Purchase (1-Click)", 
-      value: "post_purchase",
-      disabled: activePlan === "Basic Plan" || activePlan === null
+      label: activePlan === null ? "Post-Purchase (Pro Only)" : "Post-Purchase (1-Click)", 
+      value: "post_purchase", 
+      disabled: activePlan === null
     },
     { 
-      label: (activePlan === "Basic Plan" || activePlan === null) ? "Inline Checkout (Pro Only)" : "Inline Checkout", 
-      value: "checkout",
-      disabled: activePlan === "Basic Plan" || activePlan === null
+      label: activePlan === null ? "Inline Checkout (Pro Only)" : "Inline Checkout", 
+      value: "checkout", 
+      disabled: activePlan === null
     },
     { 
-      label: (activePlan === "Basic Plan" || activePlan === null) ? "Thank You Page (Pro Only)" : "Thank You Page", 
-      value: "thank_you",
-      disabled: activePlan === "Basic Plan" || activePlan === null
+      label: activePlan === null ? "Thank You Page (Pro Only)" : "Thank You Page", 
+      value: "thank_you", 
+      disabled: activePlan === null
     }
   ];
 
@@ -234,7 +249,8 @@ export default function NewOffer() {
   const handleSave = useCallback(() => {
     const errors: string[] = [];
     if (!offerName) errors.push("Offer Name is required.");
-    if (!upsellProductId) errors.push("Upsell Product is required.");
+    if (triggerType !== "ALL_PRODUCTS" && triggerItems.length === 0) errors.push("At least one trigger item is required, or select All Products.");
+    if (upsellItems.length === 0) errors.push("At least one Upsell Product is required.");
     
     const parsedDiscount = parseFloat(discountValue);
     if (isNaN(parsedDiscount) || parsedDiscount < 0) errors.push("Discount must be a positive number.");
@@ -250,17 +266,18 @@ export default function NewOffer() {
     const formData = new FormData();
     formData.append("offerName", offerName);
     formData.append("placement", placement);
-    formData.append("triggerProductId", triggerProductId);
-    formData.append("upsellProductId", upsellProductId);
+    formData.append("triggerType", triggerType);
+    formData.append("triggerProductIds", JSON.stringify(triggerItems.map(i => i.id)));
+    formData.append("upsellProductIds", JSON.stringify(upsellItems.map(i => i.id)));
     formData.append("discountType", discountType);
     formData.append("discountValue", discountValue);
 
     submit(formData, { method: "post" });
-  }, [offerName, placement, triggerProductId, upsellProductId, discountType, discountValue, submit]);
+  }, [offerName, placement, triggerType, triggerItems, upsellItems, discountType, discountValue, submit]);
 
   return (
     <Page
-      breadcrumbs={[{ content: "Dashboard", onAction: () => navigate("/app") }]}
+      backAction={{ content: "Dashboard", onAction: () => navigate("/app") }}
       title="Create New Offer"
     >
       <TitleBar title="Create New Offer">
@@ -313,52 +330,89 @@ export default function NewOffer() {
             <Card>
               <BlockStack gap="400">
                 <Text as="h2" variant="headingMd">
-                  Products
+                  Trigger Conditions
                 </Text>
-                <BlockStack gap="200">
-                  <Text as="p" variant="bodyMd" fontWeight="bold">Trigger Product (Optional)</Text>
-                  <Text as="p" tone="subdued">Select a product that will trigger this upsell when added to cart or purchased.</Text>
-                  <InlineStack gap="400" align="start">
-                    <Button onClick={() => selectProduct(setTriggerProductId, setTriggerProductTitle)}>
-                      {triggerProductId ? "Change Product" : "Browse Products"}
-                    </Button>
-                    {triggerProductTitle && (
-                      <Badge tone="info">{triggerProductTitle}</Badge>
-                    )}
-                  </InlineStack>
-                </BlockStack>
                 
-                {recommendations.length > 0 && (
+                <Select
+                  label="When should this offer be shown?"
+                  options={[
+                    { label: "When specific products are in the cart", value: "SPECIFIC_PRODUCTS" },
+                    { label: "When items from specific collections are in the cart", value: "SPECIFIC_COLLECTIONS" },
+                    { label: "For any product (Storewide)", value: "ALL_PRODUCTS" },
+                  ]}
+                  value={triggerType}
+                  onChange={(val) => {
+                    setTriggerType(val);
+                    setTriggerItems([]); // Reset items on switch
+                  }}
+                />
+
+                {triggerType !== "ALL_PRODUCTS" && (
                   <BlockStack gap="200">
-                    <Text as="p" tone="subdued">AI Suggested Upsells for this product:</Text>
+                    <InlineStack gap="400" align="start">
+                      <Button onClick={() => selectResource(triggerType === 'SPECIFIC_COLLECTIONS' ? 'collection' : 'product', setTriggerItems)}>
+                        {triggerItems.length > 0 ? "Edit Selection" : `Browse ${triggerType === 'SPECIFIC_COLLECTIONS' ? 'Collections' : 'Products'}`}
+                      </Button>
+                    </InlineStack>
+                    
+                    {triggerItems.length > 0 && (
+                      <InlineStack gap="200">
+                        {triggerItems.map(item => (
+                          <Badge tone="info" key={item.id}>{item.title}</Badge>
+                        ))}
+                      </InlineStack>
+                    )}
+                  </BlockStack>
+                )}
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingMd">
+                  Upsell Products
+                </Text>
+                
+                {recommendations.length > 0 && triggerType === "SPECIFIC_PRODUCTS" && (
+                  <BlockStack gap="200">
+                    <Text as="p" tone="subdued">AI Suggested Upsells for the first trigger product:</Text>
                     <InlineStack gap="200">
-                      {recommendations.map((rec: any) => (
-                        <Button 
-                          key={rec.id} 
-                          onClick={() => {
-                            setUpsellProductId(rec.id);
-                            setUpsellProductTitle(rec.title);
-                          }}
-                          pressed={upsellProductId === rec.id}
-                        >
-                          {rec.title} (Score: {rec.score})
-                        </Button>
-                      ))}
+                      {recommendations.map((rec: any) => {
+                        const isSelected = upsellItems.some(item => item.id === rec.id);
+                        return (
+                          <Button 
+                            key={rec.id} 
+                            onClick={() => {
+                              if (isSelected) {
+                                setUpsellItems(upsellItems.filter(item => item.id !== rec.id));
+                              } else {
+                                setUpsellItems([...upsellItems, { id: rec.id, title: rec.title }]);
+                              }
+                            }}
+                            pressed={isSelected}
+                          >
+                            {rec.title} (Score: {rec.score})
+                          </Button>
+                        )
+                      })}
                     </InlineStack>
                   </BlockStack>
                 )}
 
                 <BlockStack gap="200">
-                  <Text as="p" variant="bodyMd" fontWeight="bold">Upsell Product</Text>
-                  <Text as="p" tone="subdued">Select the product you want to offer as an upsell.</Text>
+                  <Text as="p" tone="subdued">Select one or more products you want to offer as upsells.</Text>
                   <InlineStack gap="400" align="start">
-                    <Button onClick={() => selectProduct(setUpsellProductId, setUpsellProductTitle)} variant="primary">
-                      {upsellProductId ? "Change Upsell Product" : "Select Upsell Product"}
+                    <Button onClick={() => selectResource('product', setUpsellItems)} variant="primary">
+                      {upsellItems.length > 0 ? "Edit Upsell Products" : "Browse Upsell Products"}
                     </Button>
-                    {upsellProductTitle && (
-                      <Badge tone="success">{upsellProductTitle}</Badge>
-                    )}
                   </InlineStack>
+                  {upsellItems.length > 0 && (
+                    <InlineStack gap="200">
+                      {upsellItems.map(item => (
+                        <Badge tone="success" key={item.id}>{item.title}</Badge>
+                      ))}
+                    </InlineStack>
+                  )}
                 </BlockStack>
               </BlockStack>
             </Card>

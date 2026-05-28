@@ -197,8 +197,8 @@ export default function AnalyticsDashboard() {
                     <BlockStack gap="300">
                       {placementData.map((p) => (
                         <div key={p.type} style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '8px', borderBottom: '1px solid #ebebeb' }}>
-                          <Text as="span" variant="bodyMd" style={{ textTransform: 'capitalize' }}>{p.type.replace('_', ' ')}</Text>
-                          <Text as="span" variant="bodyMd" fontWeight="bold">${p.revenue.toFixed(2)}</Text>
+                          <span style={{ textTransform: 'capitalize' }}>{p.type.replace('_', ' ')}</span>
+                          <span style={{ fontWeight: 'bold' }}>${p.revenue.toFixed(2)}</span>
                         </div>
                       ))}
                     </BlockStack>

@@ -49,8 +49,9 @@ model Offer {
   storeId           String
   name              String
   type              String   // post_purchase, checkout, cart, product_page
-  triggerProductIds String[] // Array of product IDs that trigger the offer
-  upsellProductId   String
+  triggerType       String   @default("SPECIFIC_PRODUCTS") // SPECIFIC_PRODUCTS, SPECIFIC_COLLECTIONS, ALL_PRODUCTS
+  triggerProductIds String[] // Array of product or collection IDs
+  upsellProductIds  String[] // Array of upsell product IDs
   conditions        Json     @default("{}") // cart value, customer tag, etc.
   discountType      String   // percentage, fixed_amount
   discountValue     Float

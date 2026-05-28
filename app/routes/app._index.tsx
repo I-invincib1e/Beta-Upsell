@@ -1,11 +1,12 @@
-import { json, LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate, redirect } from "@remix-run/react";
-import { Page, Layout, Card, BlockStack, Text, Button, Grid, Box } from "@shopify/polaris";
+import type { LoaderFunctionArgs } from "@remix-run/node";
+import { json } from "@remix-run/node";
+import { useLoaderData, useNavigate } from "@remix-run/react";
+import { Page, Layout, Card, BlockStack, Text, Button, Grid, Box, CalloutCard } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session, billing } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   
   const shopDomain = session.shop;
 
@@ -48,7 +49,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   });
 };
 
-import { CalloutCard } from "@shopify/polaris";
 
 export default function Dashboard() {
   const { totalOffers, activeOffers, analytics, shopDomain, apiKey } = useLoaderData<typeof loader>();

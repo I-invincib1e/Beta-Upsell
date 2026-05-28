@@ -1,7 +1,7 @@
+// @ts-nocheck
 import {
   reactExtension,
   useApi,
-  Banner,
   BlockStack,
   Button,
   Image,
@@ -16,7 +16,7 @@ export default reactExtension(
 );
 
 function Extension() {
-  const { shop } = useApi();
+  const { shop, order } = useApi();
 
   const [offer, setOffer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -28,10 +28,11 @@ function Extension() {
   useEffect(() => {
     async function fetchOffer() {
       try {
-        const res = await fetch(`${appUrl}/offers?shop=${shopDomain}&placement=thank_you`);
+        const productIds = order?.lines?.map((line: any) => line.merchandise?.product?.id?.split('/')?.pop())?.filter(Boolean)?.join(',') || '';
+        const res = await fetch(`${appUrl}/offers?shop=${shopDomain}&placement=thank_you&productIds=${encodeURIComponent(productIds)}`);
         const data = await res.json();
         
-        if (data && data.offer) {
+        if (data && data.offer && data.offer.upsellProducts && data.offer.upsellProducts.length > 0) {
           setOffer(data.offer);
         }
       } catch (err) {
@@ -62,7 +63,7 @@ function Extension() {
 
   if (loading || !offer) return null;
 
-  const handleAcceptOffer = () => {
+  const handleAcceptOffer = (product: any) => {
     // Track click
     fetch(`${appUrl}/events`, {
       method: 'POST',
@@ -71,42 +72,44 @@ function Extension() {
         shop: shopDomain,
         offerId: offer.id,
         eventType: 'accepted',
-        upsellRevenue: offer.originalPrice
+        upsellRevenue: product.originalPrice
       })
     }).catch(console.error);
     
-    // Redirect to product page (optionally with a discount code appended in URL if we generated one)
-    // For V1, we direct them back to the storefront to purchase the item
+    // Redirect to product page 
     // @ts-ignore
-    window.open(`https://${shopDomain}/products/${offer.handle || offer.variantId}`, '_blank');
+    window.open(`https://${shopDomain}/products/${product.handle || product.id}`, '_blank');
   };
 
   return (
     <BlockStack spacing="loose" padding="tight" border="base" cornerRadius="base">
       <Text size="base" emphasis="bold">Special Thank You Offer!</Text>
       
-      <InlineLayout
-        spacing="base"
-        columns={['20%', 'fill', 'auto']}
-        blockAlignment="center"
-      >
-        {offer.productImage && (
-          <Image source={offer.productImage} />
-        )}
-        
-        <BlockStack spacing="none">
-          <Text size="base" emphasis="bold">{offer.productTitle}</Text>
-          <Text size="small" appearance="subdued">
-            {offer.discountType === 'percentage' 
-              ? `Save ${offer.discountValue}% instantly!` 
-              : `Save $${offer.discountValue} instantly!`}
-          </Text>
-        </BlockStack>
-        
-        <Button onPress={handleAcceptOffer}>
-          Claim Offer
-        </Button>
-      </InlineLayout>
+      {offer.upsellProducts.map((product: any) => (
+        <InlineLayout
+          key={product.id}
+          spacing="base"
+          columns={['20%', 'fill', 'auto']}
+          blockAlignment="center"
+        >
+          {product.image && (
+            <Image source={product.image} />
+          )}
+          
+          <BlockStack spacing="none">
+            <Text size="base" emphasis="bold">{product.title}</Text>
+            <Text size="small" appearance="subdued">
+              {offer.discountType === 'percentage' 
+                ? `Save ${offer.discountValue}% instantly!` 
+                : `Save $${offer.discountValue} instantly!`}
+            </Text>
+          </BlockStack>
+          
+          <Button onPress={() => handleAcceptOffer(product)}>
+            Claim Offer
+          </Button>
+        </InlineLayout>
+      ))}
     </BlockStack>
   );
 }

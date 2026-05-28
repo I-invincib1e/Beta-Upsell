@@ -18,7 +18,7 @@ export default reactExtension(
 );
 
 function Extension() {
-  const { query, shop, extension } = useApi();
+  const { shop } = useApi();
   const applyCartLinesChange = useApplyCartLinesChange();
   const cartLines = useCartLines();
 
@@ -47,14 +47,18 @@ function Extension() {
 
     async function fetchOffer() {
       try {
-        const res = await fetch(`${appUrl}/offers?shop=${shopDomain}&placement=checkout`);
+        const productIds = cartLines.map(line => line.merchandise.product?.id || '').filter(Boolean).join(',');
+        const res = await fetch(`${appUrl}/offers?shop=${shopDomain}&placement=checkout&productIds=${encodeURIComponent(productIds)}`);
         const data = await res.json();
         
-        if (data && data.offer) {
-          // Check if the upsell product is already in the cart naturally
-          const alreadyInCart = cartLines.some(line => line.merchandise.id.includes(data.offer.variantId));
-          if (!alreadyInCart) {
-            setOffer(data.offer);
+        if (data && data.offer && data.offer.upsellProducts) {
+          // Filter out products already in cart
+          const availableUpsells = data.offer.upsellProducts.filter((upsell: any) => 
+            !cartLines.some(line => line.merchandise.id.includes(upsell.variantId))
+          );
+          
+          if (availableUpsells.length > 0) {
+            setOffer({ ...data.offer, upsellProducts: availableUpsells });
           }
         }
       } catch (err) {
@@ -85,14 +89,14 @@ function Extension() {
 
   if (loading || !offer) return null;
 
-  async function handleAddOffer() {
-    setAdding(true);
+  async function handleAddOffer(product: any) {
+    setAdding(product.id);
     setHasError(false);
 
     try {
       const result = await applyCartLinesChange({
         type: 'addCartLine',
-        merchandiseId: `gid://shopify/ProductVariant/${offer.variantId}`,
+        merchandiseId: `gid://shopify/ProductVariant/${product.variantId}`,
         quantity: 1,
         attributes: [
           { key: '_upsell_offer_id', value: offer.id }
@@ -103,7 +107,6 @@ function Extension() {
         setHasError(true);
         setAdding(false);
       } else {
-        // Track success
         fetch(`${appUrl}/events`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -111,12 +114,18 @@ function Extension() {
             shop: shopDomain,
             offerId: offer.id,
             eventType: 'accepted',
-            upsellRevenue: offer.originalPrice
+            upsellRevenue: product.originalPrice
           })
         }).catch(console.error);
         
-        // Hide offer by clearing state
-        setOffer(null);
+        // Remove the added product from the list of upsells
+        const remaining = offer.upsellProducts.filter((p: any) => p.id !== product.id);
+        if (remaining.length > 0) {
+          setOffer({ ...offer, upsellProducts: remaining });
+          setAdding(false);
+        } else {
+          setOffer(null);
+        }
       }
     } catch (err) {
       console.error(err);
@@ -135,31 +144,34 @@ function Extension() {
         </Banner>
       )}
 
-      <InlineLayout
-        spacing="base"
-        columns={['20%', 'fill', 'auto']}
-        blockAlignment="center"
-      >
-        {offer.productImage && (
-          <Image source={offer.productImage} />
-        )}
-        
-        <BlockStack spacing="none">
-          <Text size="base" emphasis="bold">{offer.productTitle}</Text>
-          <Text size="small" appearance="subdued">
-            {offer.discountType === 'percentage' 
-              ? `Save ${offer.discountValue}% instantly!` 
-              : `Save $${offer.discountValue} instantly!`}
-          </Text>
-        </BlockStack>
-        
-        <Button
-          loading={adding}
-          onPress={handleAddOffer}
+      {offer.upsellProducts.map((product: any) => (
+        <InlineLayout
+          key={product.id}
+          spacing="base"
+          columns={['20%', 'fill', 'auto']}
+          blockAlignment="center"
         >
-          Add to order
-        </Button>
-      </InlineLayout>
+          {product.image && (
+            <Image source={product.image} />
+          )}
+          
+          <BlockStack spacing="none">
+            <Text size="base" emphasis="bold">{product.title}</Text>
+            <Text size="small" appearance="subdued">
+              {offer.discountType === 'percentage' 
+                ? `Save ${offer.discountValue}% instantly!` 
+                : `Save $${offer.discountValue} instantly!`}
+            </Text>
+          </BlockStack>
+          
+          <Button
+            loading={adding === product.id}
+            onPress={() => handleAddOffer(product)}
+          >
+            Add
+          </Button>
+        </InlineLayout>
+      ))}
     </BlockStack>
   );
 }

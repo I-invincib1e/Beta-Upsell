@@ -1,4 +1,4 @@
-import { Page, Layout, Card, BlockStack, Text, Button, Accordion, Box, Grid } from "@shopify/polaris";
+import { Page, Layout, Card, BlockStack, Text, Button, Box } from "@shopify/polaris";
 import { useState } from "react";
 
 export default function SupportPage() {
@@ -27,7 +27,7 @@ export default function SupportPage() {
     {
       id: "faq4",
       question: "What are the active offer limits?",
-      answer: "The Free Plan is limited to 1 active offer at a time. The Basic Plan ($9/mo) gives you UNLIMITED active offers for Cart and Product pages. To unlock advanced placements (Checkout, Post-Purchase, Thank You page), please upgrade to the Pro plan."
+      answer: "The Free Plan is limited to 1 active offer at a time. To unlock UNLIMITED active offers and advanced placements (Checkout, Post-Purchase, Thank You page), please upgrade to the Pro plan ($29/mo)."
     },
     {
       id: "faq5",

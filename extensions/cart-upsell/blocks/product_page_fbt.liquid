@@ -1,32 +1,58 @@
 {% assign active_offers = shop.metafields.beta_upsell.active_offers.value %}
 {% assign app_settings = shop.metafields.beta_upsell.settings.value %}
-{% assign target_offer = null %}
+{% assign matched_offer = null %}
+{% assign product_id_string = "gid://shopify/Product/" | append: product.id %}
 
 {% if active_offers %}
   {% for offer in active_offers %}
-    {% assign target_offer = offer %}
-    {% break %}
+    {% if offer.triggerType == 'ALL_PRODUCTS' %}
+      {% assign matched_offer = offer %}
+      {% break %}
+    {% elsif offer.triggerType == 'SPECIFIC_PRODUCTS' %}
+      {% if offer.triggerProductIds contains product_id_string %}
+        {% assign matched_offer = offer %}
+        {% break %}
+      {% endif %}
+    {% elsif offer.triggerType == 'SPECIFIC_COLLECTIONS' %}
+      {% for collection in product.collections %}
+        {% assign collection_id_string = "gid://shopify/Collection/" | append: collection.id %}
+        {% if offer.triggerProductIds contains collection_id_string %}
+          {% assign matched_offer = offer %}
+          {% break %}
+        {% endif %}
+      {% endfor %}
+      {% if matched_offer != null %}
+        {% break %}
+      {% endif %}
+    {% endif %}
   {% endfor %}
 {% endif %}
 
 {% assign widget_title = app_settings.widgetTitle | default: block.settings.heading | default: 'Frequently Bought Together' %}
 {% assign btn_color = app_settings.primaryColor | default: block.settings.button_color %}
 
-{% if target_offer != null and target_offer.handle != blank and product.id != blank %}
-  {% assign upsell_product = all_products[target_offer.handle] %}
+{% if matched_offer != null and matched_offer.handles != blank and product.id != blank %}
+  {% assign upsell_product = null %}
+  {% for handle in matched_offer.handles %}
+    {% assign temp_product = all_products[handle] %}
+    {% if temp_product != blank and temp_product.id != product.id %}
+      {% assign upsell_product = temp_product %}
+      {% break %}
+    {% endif %}
+  {% endfor %}
   
-  {% if upsell_product != blank and upsell_product.id != product.id %}
+  {% if upsell_product != null %}
     <div class="beta-fbt-widget" style="padding: 20px; border: 1px solid {{ block.settings.border_color }}; border-radius: 8px; background: {{ block.settings.bg_color }}; margin: 20px 0;">
       <h3 style="margin: 0 0 15px; color: {{ block.settings.text_color }}; font-size: 16px; font-weight: 600;">{{ widget_title }}</h3>
       
       {% assign discount_pct = 0 %}
-      {% if target_offer.discountType == 'percentage' %}
-        {% assign discount_decimal = target_offer.discountValue | divided_by: 100.0 %}
+      {% if matched_offer.discountType == 'percentage' %}
+        {% assign discount_decimal = matched_offer.discountValue | divided_by: 100.0 %}
         {% assign discount_amount = upsell_product.price | times: discount_decimal %}
         {% assign final_upsell_price = upsell_product.price | minus: discount_amount %}
-        {% assign discount_pct = target_offer.discountValue | round %}
+        {% assign discount_pct = matched_offer.discountValue | round %}
       {% else %}
-        {% assign discount_cents = target_offer.discountValue | times: 100 %}
+        {% assign discount_cents = matched_offer.discountValue | times: 100 %}
         {% assign final_upsell_price = upsell_product.price | minus: discount_cents %}
         {% assign saved_pct = discount_cents | times: 100.0 | divided_by: upsell_product.price %}
         {% assign discount_pct = saved_pct | round %}
@@ -120,7 +146,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             shop: Shopify.shop,
-            offerId: '{{ target_offer.id }}',
+            offerId: '{{ matched_offer.id }}',
             eventType: 'shown',
             device: isMobile
           })
@@ -161,7 +187,7 @@
               id: {{ upsell_product.variants.first.id }},
               quantity: 1,
               properties: {
-                '_upsell_offer_id': '{{ target_offer.id }}'
+                '_upsell_offer_id': '{{ matched_offer.id }}'
               }
             });
             
@@ -170,7 +196,7 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 shop: Shopify.shop,
-                offerId: '{{ target_offer.id }}',
+                offerId: '{{ matched_offer.id }}',
                 eventType: 'accepted',
                 upsellRevenue: upsellPrice / 100,
                 device: isMobile
@@ -182,7 +208,7 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 shop: Shopify.shop,
-                offerId: '{{ target_offer.id }}',
+                offerId: '{{ matched_offer.id }}',
                 eventType: 'declined',
                 device: isMobile
               })
