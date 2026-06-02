@@ -66,7 +66,7 @@
           {% unless in_cart %}
             <div style="display: flex; align-items: center; gap: 16px;">
               <a href="{{ upsell_product.url }}" style="flex-shrink: 0;">
-                <img src="{{ upsell_product.featured_image | img_url: '120x120', crop: 'center' }}" alt="{{ upsell_product.title }}" style="width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #eee;">
+                <img width="72" height="72" src="{{ upsell_product.featured_image | image_url: width: 120, height: 120, crop: 'center' }}" alt="{{ upsell_product.title }}" style="width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #eee;">
               </a>
               
               <div style="flex-grow: 1; min-width: 0;">
@@ -93,11 +93,8 @@
                     {{ upsell_product.price | money }}
                   </span>
                 </div>
-                {% if matched_offer.discountCode != blank %}
-                  <p style="font-size: 12px; color: #666; margin: 0 0 8px;">Use code <strong>{{ matched_offer.discountCode }}</strong> at checkout</p>
-                {% endif %}
                 
-                <form class="beta-upsell-add-form" action="{{ routes.cart_add_url }}" method="post" enctype="multipart/form-data" style="margin: 0;" data-offer-id="{{ matched_offer.id }}">
+                <form action="/cart/add" method="post" enctype="multipart/form-data" style="margin: 0;">
                   <input type="hidden" name="id" value="{{ upsell_product.variants.first.id }}">
                   <input type="hidden" name="properties[_upsell_offer_id]" value="{{ matched_offer.id }}">
                   <button type="submit" style="width: 100%; background: {{ btn_color }}; color: {{ block.settings.button_text_color }}; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: opacity 0.2s ease;">
