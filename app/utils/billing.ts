@@ -1,17 +1,35 @@
-/**
- * Calculates the remaining trial days when a merchant is upgrading or downgrading.
- *
- * @param planToSelect - The name of the plan the merchant wants to subscribe to
- * @param existingSubName - The name of the merchant's current/existing subscription
- * @param existingTrialDays - The total trial days initially granted to the existing subscription
- * @param existingCreatedAt - The date the existing subscription was created
- * @returns The number of trial days remaining, or 0 if no trial should be granted.
- */
+const PRO_PLAN_NAME = "Pro Plan";
+const DEFAULT_TRIAL_DAYS = 14;
+
 export function calculateRemainingTrialDays(
   planToSelect: string,
   existingSubName: string | undefined,
   existingTrialDays: number | undefined,
-  existingCreatedAt: string | Date | undefined
+  existingCreatedAt: string | Date | undefined,
 ): number {
-  return 0;
+  if (planToSelect !== PRO_PLAN_NAME) {
+    return 0;
+  }
+
+  if (!existingSubName || !existingTrialDays || !existingCreatedAt) {
+    return DEFAULT_TRIAL_DAYS;
+  }
+
+  const createdAt =
+    existingCreatedAt instanceof Date
+      ? existingCreatedAt
+      : new Date(existingCreatedAt);
+
+  const trialEnd = new Date(createdAt);
+  trialEnd.setDate(trialEnd.getDate() + existingTrialDays);
+
+  const now = new Date();
+  const remainingMs = trialEnd.getTime() - now.getTime();
+  if (remainingMs <= 0) {
+    return 0;
+  }
+
+  return Math.ceil(remainingMs / (1000 * 60 * 60 * 24));
 }
+
+export { PRO_PLAN_NAME, DEFAULT_TRIAL_DAYS };

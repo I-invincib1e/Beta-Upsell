@@ -1,18 +1,34 @@
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import { useLoaderData, useNavigate } from "@remix-run/react";
-import { Page, Layout, Card, BlockStack, Text, Button, Grid, Box, CalloutCard } from "@shopify/polaris";
+import {
+  Page,
+  Layout,
+  Card,
+  BlockStack,
+  Text,
+  Button,
+  Grid,
+  Box,
+  CalloutCard,
+  Badge,
+  Banner,
+  InlineStack,
+} from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
+import { getMerchantPlan } from "../utils/merchant-plan.server";
+import { computeOfferHealth } from "../utils/offer-health";
+import { PRO_PLAN_NAME } from "../utils/billing";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
-  
+  const { session, billing } = await authenticate.admin(request);
   const shopDomain = session.shop;
+  const { plan, displayName } = await getMerchantPlan(shopDomain, billing);
 
   const store = await prisma.store.findUnique({
     where: { shopDomain },
-    include: { offers: true }
+    include: { offers: true },
   });
 
   const totalOffers = store?.offers.length || 0;
@@ -40,18 +56,33 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     acceptedOffers: accepts
   };
 
-  return json({ 
-    totalOffers, 
-    activeOffers, 
-    analytics, 
+  const needsSyncCount =
+    store?.offers.filter((o) => computeOfferHealth(o) === "needs_sync").length ??
+    0;
+
+  return json({
+    totalOffers,
+    activeOffers,
+    analytics,
     shopDomain,
-    apiKey: process.env.SHOPIFY_API_KEY || ""
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    plan,
+    planLabel: displayName,
+    needsSyncCount,
   });
 };
 
-
 export default function Dashboard() {
-  const { totalOffers, activeOffers, analytics, shopDomain, apiKey } = useLoaderData<typeof loader>();
+  const {
+    totalOffers,
+    activeOffers,
+    analytics,
+    shopDomain,
+    apiKey,
+    plan,
+    planLabel,
+    needsSyncCount,
+  } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   
   const showSetupGuide = totalOffers === 0;
@@ -62,6 +93,46 @@ export default function Dashboard() {
       primaryAction={<Button variant="primary" onClick={() => navigate("/app/offers/new")}>Create Offer</Button>}
     >
       <Layout>
+        {needsSyncCount > 0 && (
+          <Layout.Section>
+            <Banner
+              tone="warning"
+              title={`${needsSyncCount} offer(s) need discount sync`}
+              action={{
+                content: "Go to Offers",
+                onAction: () => navigate("/app/offers"),
+              }}
+            >
+              <p>
+                Open Offers and run <b>Sync discount codes</b> so storefront discounts match your admin settings.
+              </p>
+            </Banner>
+          </Layout.Section>
+        )}
+
+        <Layout.Section>
+          <Card>
+            <BlockStack gap="300">
+              <InlineStack align="space-between" blockAlign="center">
+                <Text as="h2" variant="headingMd">
+                  Your plan
+                </Text>
+                <Badge tone={plan === "pro" ? "success" : "info"}>{planLabel}</Badge>
+              </InlineStack>
+              <Text as="p" variant="bodyMd" tone="subdued">
+                {plan === "pro"
+                  ? "Pro unlocks all placements and unlimited active offers."
+                  : "Free includes 1 active offer on cart and product page. Upgrade for checkout, post-purchase, and thank-you."}
+              </Text>
+              {plan !== "pro" && (
+                <Button onClick={() => navigate("/app/pricing")}>
+                  Upgrade to {PRO_PLAN_NAME}
+                </Button>
+              )}
+            </BlockStack>
+          </Card>
+        </Layout.Section>
+
         {showSetupGuide && (
           <Layout.Section>
             <CalloutCard

@@ -31,74 +31,82 @@ model Session {
 }
 
 model Store {
-  id           String   @id @default(uuid())
-  shopDomain   String   @unique
-  accessToken  String?
-  plan         String   @default("free")
-  settings     Json     @default("{}")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                     String    @id @default(uuid())
+  shopDomain             String    @unique
+  accessToken            String?
+  plan                   String    @default("free") // free | pro
+  shopifySubscriptionId  String?
+  billingStatus          String? // active | cancelled | frozen
+  trialEndsAt            DateTime?
+  settings               Json      @default("{}")
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
-  offers       Offer[]
-  offerEvents  OfferEvent[]
-  analytics    AnalyticsDaily[]
+  offers      Offer[]
+  offerEvents OfferEvent[]
+  analytics   AnalyticsDaily[]
 }
 
 model Offer {
-  id                String   @id @default(uuid())
-  storeId           String
-  name              String
-  type              String   // post_purchase, checkout, cart, product_page
-  triggerType       String   @default("SPECIFIC_PRODUCTS") // SPECIFIC_PRODUCTS, SPECIFIC_COLLECTIONS, ALL_PRODUCTS
-  triggerProductIds String[] // Array of product or collection IDs
-  upsellProductIds  String[] // Array of upsell product IDs
-  conditions        Json     @default("{}") // cart value, customer tag, etc.
-  discountType      String   // percentage, fixed_amount
-  discountValue     Float
-  isActive          Boolean  @default(true)
-  priority          Int      @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                  String   @id @default(uuid())
+  storeId             String
+  name                String
+  type                String // post_purchase, checkout, cart, product_page, thank_you
+  triggerType         String   @default("SPECIFIC_PRODUCTS")
+  triggerProductIds   String[]
+  upsellProductIds    String[]
+  conditions          Json     @default("{}")
+  discountType        String
+  discountValue       Float
+  discountCode        String?
+  shopifyDiscountGid  String?
+  maxUpsellProducts   Int      @default(3)
+  healthStatus        String   @default("ok") // ok | needs_sync | broken
+  deactivatedByPlan   Boolean  @default(false)
+  isActive            Boolean  @default(true)
+  priority            Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  store             Store    @relation(fields: [storeId], references: [id])
-  offerEvents       OfferEvent[]
-  analytics         AnalyticsDaily[]
+  store       Store            @relation(fields: [storeId], references: [id])
+  offerEvents OfferEvent[]
+  analytics   AnalyticsDaily[]
 }
 
 model OfferEvent {
-  id                   String   @id @default(uuid())
-  storeId              String
-  offerId              String
-  orderId              String?
-  customerId           String?
-  eventType            String   // shown, accepted, declined
-  upsellRevenue        Float    @default(0.0)
-  originalOrderValue   Float    @default(0.0)
-  idempotencyKey       String?
-  sessionData          Json     @default("{}")
-  createdAt            DateTime @default(now())
+  id                 String   @id @default(uuid())
+  storeId            String
+  offerId            String
+  orderId            String?
+  customerId         String?
+  eventType          String
+  upsellRevenue      Float    @default(0.0)
+  originalOrderValue Float    @default(0.0)
+  idempotencyKey     String?
+  sessionData        Json     @default("{}")
+  createdAt          DateTime @default(now())
 
-  store                Store    @relation(fields: [storeId], references: [id])
-  offer                Offer    @relation(fields: [offerId], references: [id])
+  store Store @relation(fields: [storeId], references: [id])
+  offer Offer @relation(fields: [offerId], references: [id])
 
   @@unique([storeId, idempotencyKey])
 }
 
 model AnalyticsDaily {
-  id                   String   @id @default(uuid())
-  storeId              String
-  offerId              String
-  date                 DateTime @db.Date
-  impressions          Int      @default(0)
-  accepts              Int      @default(0)
-  declines             Int      @default(0)
-  totalUpsellRevenue   Float    @default(0.0)
-  avgOrderValueLift    Float    @default(0.0)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  storeId            String
+  offerId            String
+  date               DateTime @db.Date
+  impressions        Int      @default(0)
+  accepts            Int      @default(0)
+  declines           Int      @default(0)
+  totalUpsellRevenue Float    @default(0.0)
+  avgOrderValueLift  Float    @default(0.0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  store                Store    @relation(fields: [storeId], references: [id])
-  offer                Offer    @relation(fields: [offerId], references: [id])
+  store Store @relation(fields: [storeId], references: [id])
+  offer Offer @relation(fields: [offerId], references: [id])
 
   @@unique([storeId, offerId, date])
 }

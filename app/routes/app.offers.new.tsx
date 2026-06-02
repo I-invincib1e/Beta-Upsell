@@ -19,21 +19,17 @@ import { useNavigate, useSubmit, useActionData, useNavigation, useLoaderData, us
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getRecommendationsForProduct } from "../recommendations.server";
+import { billingIsTest } from "../utils/billing-env.server";
+import { getMerchantPlan, canCreateOffer } from "../utils/merchant-plan.server";
+import { syncOfferDiscountCode } from "../utils/discount-codes.server";
+import { isThemePlacement, syncThemeOffersMetafield } from "../utils/metafields.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { billing, admin, session } = await authenticate.admin(request);
   
   // 1. Remove forced billing for Freemium model
 
-  const billingCheck = await billing.check({
-    // @ts-ignore
-    plans: ["Pro Plan"],
-    isTest: billingIsTest(),
-  });
-
-  const activePlan = billingCheck.hasActivePayment 
-    ? billingCheck.appSubscriptions[0].name 
-    : null;
+  const { plan, displayName } = await getMerchantPlan(session.shop, billing);
 
   // 2. Fetch recommendations if triggerProductId is provided
   const url = new URL(request.url);
@@ -53,7 +49,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   
   const activeOfferCount = store?.offers.length || 0;
 
-  return json({ recommendations, activePlan, activeOfferCount });
+  return json({ recommendations, plan, activePlan: displayName, activeOfferCount });
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -84,21 +80,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return json({ error: "Percentage discount cannot exceed 100%." }, { status: 400 });
   }
 
-  const billingCheck = await billing.check({
-    // @ts-ignore
-    plans: ["Pro Plan"],
-    isTest: billingIsTest(),
+  const { plan } = await getMerchantPlan(shopDomain, billing);
+
+  let store = await prisma.store.findUnique({
+    where: { shopDomain },
+    include: { offers: { where: { isActive: true } } },
   });
 
-  const activePlan = billingCheck.hasActivePayment ? billingCheck.appSubscriptions[0].name : null;
-
-  let store = await prisma.store.findUnique({ where: { shopDomain }, include: { offers: { where: { isActive: true } } } });
-  
-  if (store && activePlan === null && (placement === "post_purchase" || placement === "checkout" || placement === "thank_you")) {
-    return json({ error: "This placement is only available on the Pro Plan." }, { status: 403 });
-  }
-  if (store && activePlan === null && store.offers.length >= 1) {
-    return json({ error: "Free Plan limit reached (1 active offer max). Upgrade to Basic or Pro to create more." }, { status: 403 });
+  const gate = canCreateOffer(plan, placement, store?.offers.length ?? 0);
+  if (!gate.ok) {
+    return json({ error: gate.error }, { status: 403 });
   }
   if (!store) {
     store = await prisma.store.create({
@@ -110,73 +101,50 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
   }
 
-  await prisma.offer.create({
+  const created = await prisma.offer.create({
     data: {
       storeId: store.id,
       name: offerName,
       type: placement,
       triggerType: triggerType || "SPECIFIC_PRODUCTS",
-      triggerProductIds: triggerProductIds,
-      upsellProductIds: upsellProductIds,
+      triggerProductIds,
+      upsellProductIds,
       discountType,
       discountValue,
       isActive: true,
+      healthStatus: "ok",
     },
   });
 
-  if (placement === "cart") {
-    const activeCartOffers = await prisma.offer.findMany({
-      where: { storeId: store.id, type: "cart", isActive: true },
-      select: { id: true, name: true, triggerType: true, triggerProductIds: true, upsellProductIds: true, discountType: true, discountValue: true }
-    });
-
-    const enrichedOffers = await Promise.all(activeCartOffers.map(async (offer) => {
-      const response = await admin.graphql(
-        `query getProductHandles($ids: [ID!]!) {
-          nodes(ids: $ids) {
-            ... on Product {
-              id
-              handle
-            }
-          }
-        }`,
-        { variables: { ids: offer.upsellProductIds } }
-      );
-      const data = await response.json();
-      const handles = data.data?.nodes?.map((n: any) => n?.handle).filter(Boolean) || [];
-      return {
-        ...offer,
-        handles
-      };
-    }));
-
-    const metafieldsSetMutation = `
-      mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
-        metafieldsSet(metafields: $metafields) {
-          metafields { id key value }
-        }
-      }
-    `;
-
-    const shopQuery = await admin.graphql(`{ shop { id } }`);
-    const shopData = await shopQuery.json();
-    
-    await admin.graphql(metafieldsSetMutation, {
-      variables: {
-        metafields: [
-          {
-            namespace: "beta_upsell",
-            key: "active_offers",
-            type: "json",
-            value: JSON.stringify(enrichedOffers),
-            ownerId: shopData.data.shop.id
-          }
-        ]
-      }
-    });
+  const needsDiscountCode = ["checkout", "cart", "thank_you", "product_page"].includes(placement);
+  if (needsDiscountCode) {
+    try {
+      const discountCode = await syncOfferDiscountCode(admin, {
+        id: created.id,
+        name: offerName,
+        discountType,
+        discountValue,
+        upsellProductIds,
+        discountCode: null,
+      });
+      await prisma.offer.update({
+        where: { id: created.id },
+        data: { discountCode, healthStatus: "ok" },
+      });
+    } catch (e) {
+      console.error("discount sync failed", e);
+      await prisma.offer.update({
+        where: { id: created.id },
+        data: { healthStatus: "needs_sync" },
+      });
+    }
   }
 
-  return redirect("/app");
+  if (isThemePlacement(placement)) {
+    await syncThemeOffersMetafield(admin, store.id);
+  }
+
+  return redirect("/app/offers");
 };
 
 export default function NewOffer() {
@@ -220,9 +188,10 @@ export default function NewOffer() {
   const data: any = fetcher.data || loaderData;
   const recommendations = data?.recommendations || [];
   const activePlan = data?.activePlan;
+  const plan = data?.plan ?? "free";
   const activeOfferCount = data?.activeOfferCount || 0;
 
-  const isLimitReached = (activePlan === null && activeOfferCount >= 1);
+  const isLimitReached = plan === "free" && activeOfferCount >= 1;
 
   const placementOptions = [
     { label: "Cart Drawer", value: "cart" },

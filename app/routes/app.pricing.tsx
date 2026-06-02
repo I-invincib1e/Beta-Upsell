@@ -1,40 +1,56 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
-import { Page, Card, BlockStack, Text, Button, Grid, Badge, List } from "@shopify/polaris";
+import {
+  Page,
+  Card,
+  BlockStack,
+  Text,
+  Button,
+  Grid,
+  Badge,
+  List,
+  Banner,
+} from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
-import { calculateRemainingTrialDays } from "../utils/billing";
+import prisma from "../db.server";
+import {
+  calculateRemainingTrialDays,
+  DEFAULT_TRIAL_DAYS,
+  PRO_PLAN_NAME,
+} from "../utils/billing";
 import { billingIsTest } from "../utils/billing-env.server";
+import { getMerchantPlan } from "../utils/merchant-plan.server";
+import { enforceFreePlanLimits } from "../utils/plan-enforcement.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { billing } = await authenticate.admin(request);
-  const isTest = billingIsTest();
-  const billingCheck = await billing.check({
-    // @ts-ignore
-    plans: ["Pro Plan"],
-    isTest,
+  const { billing, session } = await authenticate.admin(request);
+  const { displayName, plan } = await getMerchantPlan(session.shop, billing);
+
+  return json({
+    activePlan: displayName,
+    plan,
+    trialDays: DEFAULT_TRIAL_DAYS,
   });
-
-  const activePlan = billingCheck.hasActivePayment
-    ? billingCheck.appSubscriptions[0].name
-    : "Free Plan";
-
-  return json({ activePlan });
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { billing, session } = await authenticate.admin(request);
+  const { billing, session, admin } = await authenticate.admin(request);
   const formData = await request.formData();
   const planToSelect = formData.get("plan") as string;
 
-  if (planToSelect !== "Free Plan" && planToSelect !== "Pro Plan") {
+  if (planToSelect !== "Free Plan" && planToSelect !== PRO_PLAN_NAME) {
     return json({ error: "Invalid plan selected" }, { status: 400 });
   }
 
   const isTest = billingIsTest();
   const billingCheck = await billing.check({
     // @ts-ignore
-    plans: ["Pro Plan"],
+    plans: [PRO_PLAN_NAME],
     isTest,
+  });
+
+  const store = await prisma.store.findUnique({
+    where: { shopDomain: session.shop },
   });
 
   if (planToSelect === "Free Plan") {
@@ -45,12 +61,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         prorate: true,
       });
     }
-    return json({ success: true });
+
+    if (store) {
+      const { deactivatedPro, deactivatedExcess } =
+        await enforceFreePlanLimits(store.id, admin);
+      await prisma.store.update({
+        where: { id: store.id },
+        data: { plan: "free", billingStatus: "cancelled" },
+      });
+      return json({
+        success: true,
+        downgraded: true,
+        deactivatedPro,
+        deactivatedExcess,
+      });
+    }
+
+    return json({ success: true, downgraded: true });
   }
 
-  let trialDaysOverride: number | undefined = undefined;
+  let trialDaysOverride: number | undefined = DEFAULT_TRIAL_DAYS;
 
-  if (billingCheck.appSubscriptions && billingCheck.appSubscriptions.length > 0) {
+  if (billingCheck.appSubscriptions?.length) {
     const existingSub = billingCheck.appSubscriptions[0];
     trialDaysOverride = calculateRemainingTrialDays(
       planToSelect,
@@ -64,15 +96,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // @ts-ignore
     plan: planToSelect,
     isTest,
+    trialDays: trialDaysOverride,
     returnUrl: `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/app/pricing`,
-    ...(trialDaysOverride !== undefined ? { trialDays: trialDaysOverride } : {}),
   });
 
   return null;
 };
 
 export default function Pricing() {
-  const { activePlan } = useLoaderData<typeof loader>();
+  const { activePlan, trialDays } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
@@ -86,96 +118,90 @@ export default function Pricing() {
   return (
     <Page title="Plans & Pricing">
       <BlockStack gap="500">
+        <Banner tone="info">
+          <p>
+            Flat monthly pricing — we never take a percentage of your upsell
+            revenue.
+          </p>
+        </Banner>
+
         <Text as="p" variant="bodyLg">
-          Choose the best plan for your store. Upgrade or downgrade at any time.
+          Choose the plan that fits your store. Upgrade or downgrade anytime.
         </Text>
 
         <Grid>
-          <Grid.Cell columnSpan={{ xs: 6, sm: 2, md: 2, lg: 4, xl: 4 }}>
-            <div className="pricing-card-wrapper">
-              <Card>
-                <div className="pricing-card-content">
-                  <BlockStack gap="400">
-                    <Text as="h2" variant="headingLg">
-                      Free Plan
-                    </Text>
-                    <Text as="h3" variant="heading3xl">
-                      $0{" "}
-                      <Text as="span" variant="bodyMd" tone="subdued">
-                        /month
-                      </Text>
-                    </Text>
-                    {activePlan === "Free Plan" && (
-                      <Badge tone="success">Active Plan</Badge>
-                    )}
-
-                    <List>
-                      <List.Item>1 Active Offer Limit</List.Item>
-                      <List.Item>Cart Drawer Upsells</List.Item>
-                      <List.Item>Basic Analytics</List.Item>
-                      <List.Item>Community Support</List.Item>
-                    </List>
-                  </BlockStack>
-                  <div style={{ marginTop: "24px" }}>
-                    <Button
-                      size="large"
-                      fullWidth
-                      disabled={activePlan === "Free Plan" || isSubmitting}
-                      onClick={() => handleSelectPlan("Free Plan")}
-                      loading={isSubmitting}
-                    >
-                      {activePlan === "Free Plan"
-                        ? "Current Plan"
-                        : "Downgrade to Free"}
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            </div>
+          <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 6, xl: 6 }}>
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingLg">
+                  Free
+                </Text>
+                <Text as="h3" variant="heading2xl">
+                  $0{" "}
+                  <Text as="span" variant="bodyMd" tone="subdued">
+                    /month
+                  </Text>
+                </Text>
+                {activePlan === "Free Plan" && (
+                  <Badge tone="success">Current plan</Badge>
+                )}
+                <List>
+                  <List.Item>1 active offer</List.Item>
+                  <List.Item>Cart drawer + product page (FBT)</List.Item>
+                  <List.Item>Basic analytics</List.Item>
+                  <List.Item>Auto discount codes</List.Item>
+                </List>
+                <Button
+                  fullWidth
+                  disabled={activePlan === "Free Plan" || isSubmitting}
+                  onClick={() => handleSelectPlan("Free Plan")}
+                  loading={isSubmitting}
+                >
+                  {activePlan === "Free Plan"
+                    ? "Current plan"
+                    : "Downgrade to Free"}
+                </Button>
+              </BlockStack>
+            </Card>
           </Grid.Cell>
 
-          <Grid.Cell columnSpan={{ xs: 6, sm: 2, md: 2, lg: 4, xl: 4 }}>
-            <div className="pricing-card-wrapper">
-              <Card background="bg-surface-active">
-                <div className="pricing-card-content">
-                  <BlockStack gap="400">
-                    <Text as="h2" variant="headingLg">
-                      Pro Plan
-                    </Text>
-                    <Text as="h3" variant="heading3xl">
-                      $29{" "}
-                      <Text as="span" variant="bodyMd" tone="subdued">
-                        /month
-                      </Text>
-                    </Text>
-                    {activePlan === "Pro Plan" && (
-                      <Badge tone="success">Active Plan</Badge>
-                    )}
-
-                    <List>
-                      <List.Item>Unlimited Active Offers</List.Item>
-                      <List.Item>Post-Purchase & Checkout Extension</List.Item>
-                      <List.Item>Advanced AI Recommendations</List.Item>
-                      <List.Item>Priority Support</List.Item>
-                    </List>
-                  </BlockStack>
-                  <div style={{ marginTop: "24px" }}>
-                    <Button
-                      variant="primary"
-                      size="large"
-                      fullWidth
-                      disabled={activePlan === "Pro Plan" || isSubmitting}
-                      onClick={() => handleSelectPlan("Pro Plan")}
-                      loading={isSubmitting}
-                    >
-                      {activePlan === "Pro Plan"
-                        ? "Current Plan"
-                        : "Upgrade to Pro"}
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            </div>
+          <Grid.Cell columnSpan={{ xs: 6, sm: 3, md: 3, lg: 6, xl: 6 }}>
+            <Card background="bg-surface-secondary">
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingLg">
+                  Pro
+                </Text>
+                <Text as="h3" variant="heading2xl">
+                  $29{" "}
+                  <Text as="span" variant="bodyMd" tone="subdued">
+                    /month
+                  </Text>
+                </Text>
+                {activePlan === PRO_PLAN_NAME && (
+                  <Badge tone="success">Current plan</Badge>
+                )}
+                <List>
+                  <List.Item>{trialDays}-day free trial</List.Item>
+                  <List.Item>Unlimited active offers</List.Item>
+                  <List.Item>
+                    Post-purchase, checkout, thank-you, cart, FBT
+                  </List.Item>
+                  <List.Item>Product suggestions when creating offers</List.Item>
+                  <List.Item>No revenue share — ever</List.Item>
+                </List>
+                <Button
+                  variant="primary"
+                  fullWidth
+                  disabled={activePlan === PRO_PLAN_NAME || isSubmitting}
+                  onClick={() => handleSelectPlan(PRO_PLAN_NAME)}
+                  loading={isSubmitting}
+                >
+                  {activePlan === PRO_PLAN_NAME
+                    ? "Current plan"
+                    : "Start Pro trial"}
+                </Button>
+              </BlockStack>
+            </Card>
           </Grid.Cell>
         </Grid>
       </BlockStack>
