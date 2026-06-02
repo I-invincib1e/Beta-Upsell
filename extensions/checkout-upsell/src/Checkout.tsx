@@ -158,9 +158,7 @@ function Extension() {
           <BlockStack spacing="none">
             <Text size="base" emphasis="bold">{product.title}</Text>
             <Text size="small" appearance="subdued">
-              {offer.discountType === 'percentage' 
-                ? `Save ${offer.discountValue}% instantly!` 
-                : `Save $${offer.discountValue} instantly!`}
+              Recommended add-on for your order
             </Text>
           </BlockStack>
           

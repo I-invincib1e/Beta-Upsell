@@ -15,8 +15,13 @@ function corsResponse(data: any, status = 200) {
 }
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
+  const access = assertStorefrontApiAccess(request);
+  if (!access.ok) {
+    return corsResponse({ error: access.error ?? "Unauthorized" }, 401);
+  }
+
   const url = new URL(request.url);
-  const shop = url.searchParams.get("shop");
+  const shop = url.searchParams.get("shop") ?? access.shop;
   const placement = url.searchParams.get("placement");
   const productIdsParam = url.searchParams.get("productIds");
   const cartProductIds = productIdsParam ? productIdsParam.split(",") : [];

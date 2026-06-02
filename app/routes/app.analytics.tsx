@@ -1,6 +1,6 @@
 import { json, LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
-import { Page, Layout, Card, BlockStack, Text, Grid, IndexTable, Badge } from "@shopify/polaris";
+import { Page, Layout, Card, BlockStack, Text, Grid, IndexTable, Badge, Button } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 
