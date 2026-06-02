@@ -51,6 +51,9 @@ export default function SupportPage() {
                   Email Support (hello@adloomx.com)
                 </Button>
               </Box>
+              <Text as="p" variant="bodyMd">
+                <Link to="/app/privacy">Privacy Policy</Link>
+              </Text>
             </BlockStack>
           </Card>
         </Layout.Section>

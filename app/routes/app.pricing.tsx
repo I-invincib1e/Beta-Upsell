@@ -1,19 +1,21 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
 import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
-import { Page, Layout, Card, BlockStack, Text, Button, Grid, Badge, List, Box } from "@shopify/polaris";
+import { Page, Card, BlockStack, Text, Button, Grid, Badge, List } from "@shopify/polaris";
 import { authenticate } from "../shopify.server";
 import { calculateRemainingTrialDays } from "../utils/billing";
+import { billingIsTest } from "../utils/billing-env.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { billing } = await authenticate.admin(request);
+  const isTest = billingIsTest();
   const billingCheck = await billing.check({
     // @ts-ignore
     plans: ["Pro Plan"],
-    isTest: true,
+    isTest,
   });
 
-  const activePlan = billingCheck.hasActivePayment 
-    ? billingCheck.appSubscriptions[0].name 
+  const activePlan = billingCheck.hasActivePayment
+    ? billingCheck.appSubscriptions[0].name
     : "Free Plan";
 
   return json({ activePlan });
@@ -28,45 +30,42 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return json({ error: "Invalid plan selected" }, { status: 400 });
   }
 
+  const isTest = billingIsTest();
   const billingCheck = await billing.check({
     // @ts-ignore
     plans: ["Pro Plan"],
-    isTest: true,
+    isTest,
   });
 
-  // Handle downgrading to Free Plan
   if (planToSelect === "Free Plan") {
     if (billingCheck.hasActivePayment) {
       await billing.cancel({
         subscriptionId: billingCheck.appSubscriptions[0].id,
-        isTest: true,
+        isTest,
         prorate: true,
       });
     }
     return json({ success: true });
   }
 
-  // Robust Trial Logic
   let trialDaysOverride: number | undefined = undefined;
 
-  // If upgrading/downgrading or resubscribing, calculate if they get a trial
   if (billingCheck.appSubscriptions && billingCheck.appSubscriptions.length > 0) {
     const existingSub = billingCheck.appSubscriptions[0];
     trialDaysOverride = calculateRemainingTrialDays(
       planToSelect,
       existingSub.name,
       existingSub.trialDays,
-      existingSub.createdAt
+      existingSub.createdAt,
     );
   }
 
-  // Request the new charge
   await billing.request({
     // @ts-ignore
     plan: planToSelect,
-    isTest: true,
+    isTest,
     returnUrl: `https://${session.shop}/admin/apps/${process.env.SHOPIFY_API_KEY}/app/pricing`,
-    ...(trialDaysOverride !== undefined ? { trialDays: trialDaysOverride } : {})
+    ...(trialDaysOverride !== undefined ? { trialDays: trialDaysOverride } : {}),
   });
 
   return null;
@@ -97,10 +96,19 @@ export default function Pricing() {
               <Card>
                 <div className="pricing-card-content">
                   <BlockStack gap="400">
-                    <Text as="h2" variant="headingLg">Free Plan</Text>
-                    <Text as="h3" variant="heading3xl">$0 <Text as="span" variant="bodyMd" tone="subdued">/month</Text></Text>
-                    {activePlan === "Free Plan" && <Badge tone="success">Active Plan</Badge>}
-                    
+                    <Text as="h2" variant="headingLg">
+                      Free Plan
+                    </Text>
+                    <Text as="h3" variant="heading3xl">
+                      $0{" "}
+                      <Text as="span" variant="bodyMd" tone="subdued">
+                        /month
+                      </Text>
+                    </Text>
+                    {activePlan === "Free Plan" && (
+                      <Badge tone="success">Active Plan</Badge>
+                    )}
+
                     <List>
                       <List.Item>1 Active Offer Limit</List.Item>
                       <List.Item>Cart Drawer Upsells</List.Item>
@@ -108,15 +116,17 @@ export default function Pricing() {
                       <List.Item>Community Support</List.Item>
                     </List>
                   </BlockStack>
-                  <div style={{ marginTop: '24px' }}>
-                    <Button 
-                      size="large" 
-                      fullWidth 
+                  <div style={{ marginTop: "24px" }}>
+                    <Button
+                      size="large"
+                      fullWidth
                       disabled={activePlan === "Free Plan" || isSubmitting}
                       onClick={() => handleSelectPlan("Free Plan")}
                       loading={isSubmitting}
                     >
-                      {activePlan === "Free Plan" ? "Current Plan" : "Downgrade to Free"}
+                      {activePlan === "Free Plan"
+                        ? "Current Plan"
+                        : "Downgrade to Free"}
                     </Button>
                   </div>
                 </div>
@@ -129,10 +139,19 @@ export default function Pricing() {
               <Card background="bg-surface-active">
                 <div className="pricing-card-content">
                   <BlockStack gap="400">
-                    <Text as="h2" variant="headingLg">Pro Plan</Text>
-                    <Text as="h3" variant="heading3xl">$29 <Text as="span" variant="bodyMd" tone="subdued">/month</Text></Text>
-                    {activePlan === "Pro Plan" && <Badge tone="success">Active Plan</Badge>}
-                    
+                    <Text as="h2" variant="headingLg">
+                      Pro Plan
+                    </Text>
+                    <Text as="h3" variant="heading3xl">
+                      $29{" "}
+                      <Text as="span" variant="bodyMd" tone="subdued">
+                        /month
+                      </Text>
+                    </Text>
+                    {activePlan === "Pro Plan" && (
+                      <Badge tone="success">Active Plan</Badge>
+                    )}
+
                     <List>
                       <List.Item>Unlimited Active Offers</List.Item>
                       <List.Item>Post-Purchase & Checkout Extension</List.Item>
@@ -140,16 +159,18 @@ export default function Pricing() {
                       <List.Item>Priority Support</List.Item>
                     </List>
                   </BlockStack>
-                  <div style={{ marginTop: '24px' }}>
-                    <Button 
-                      variant="primary" 
-                      size="large" 
-                      fullWidth 
+                  <div style={{ marginTop: "24px" }}>
+                    <Button
+                      variant="primary"
+                      size="large"
+                      fullWidth
                       disabled={activePlan === "Pro Plan" || isSubmitting}
                       onClick={() => handleSelectPlan("Pro Plan")}
                       loading={isSubmitting}
                     >
-                      {activePlan === "Pro Plan" ? "Current Plan" : "Upgrade to Pro"}
+                      {activePlan === "Pro Plan"
+                        ? "Current Plan"
+                        : "Upgrade to Pro"}
                     </Button>
                   </div>
                 </div>

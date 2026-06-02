@@ -28,7 +28,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const billingCheck = await billing.check({
     // @ts-ignore
     plans: ["Pro Plan"],
-    isTest: true,
+    isTest: billingIsTest(),
   });
 
   const activePlan = billingCheck.hasActivePayment 
@@ -87,7 +87,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const billingCheck = await billing.check({
     // @ts-ignore
     plans: ["Pro Plan"],
-    isTest: true,
+    isTest: billingIsTest(),
   });
 
   const activePlan = billingCheck.hasActivePayment ? billingCheck.appSubscriptions[0].name : null;
