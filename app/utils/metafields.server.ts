@@ -30,6 +30,7 @@ export async function syncThemeOffersMetafield(
       upsellProductIds: true,
       discountType: true,
       discountValue: true,
+      discountCode: true,
     },
   });
 

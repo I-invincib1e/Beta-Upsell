@@ -2,8 +2,10 @@ import { json } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import prisma from "../db.server";
 import { unauthenticated } from "../shopify.server";
+import { assertStorefrontApiAccess } from "../utils/app-proxy.server";
+import { computeDiscountedPrice } from "../utils/discount-codes.server";
 
-function corsResponse(data: any, status = 200) {
+function corsResponse(data: unknown, status = 200) {
   return json(data, {
     status,
     headers: {
@@ -44,14 +46,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return corsResponse({ offer: null });
   }
 
-  const hasCollectionTrigger = store.offers.some(o => o.triggerType === "SPECIFIC_COLLECTIONS");
-  let cartProductCollections = new Map<string, string[]>();
+  const hasCollectionTrigger = store.offers.some(
+    (o) => o.triggerType === "SPECIFIC_COLLECTIONS",
+  );
+  const cartProductCollections = new Map<string, string[]>();
 
   if (hasCollectionTrigger && cartProductIds.length > 0) {
     try {
       const { admin } = await unauthenticated.admin(shop);
       if (admin) {
-        const productGids = cartProductIds.map(id => id.includes('gid://') ? id : `gid://shopify/Product/${id}`);
+        const productGids = cartProductIds.map((id) =>
+          id.includes("gid://") ? id : `gid://shopify/Product/${id}`,
+        );
         const response = await admin.graphql(
           `query getProductsCollections($ids: [ID!]!) {
             nodes(ids: $ids) {
@@ -63,14 +69,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
               }
             }
           }`,
-          { variables: { ids: productGids } }
+          { variables: { ids: productGids } },
         );
         const data = await response.json();
         if (data.data?.nodes) {
-          data.data.nodes.forEach((node: any) => {
+          data.data.nodes.forEach((node: {
+            id?: string;
+            collections?: { nodes?: { id: string }[] };
+          }) => {
             if (node?.id) {
-              const shortId = node.id.split('/').pop() as string;
-              const colIds = node.collections?.nodes?.map((c: any) => c.id.split('/').pop() as string) || [];
+              const shortId = node.id.split("/").pop() as string;
+              const colIds =
+                node.collections?.nodes?.map((c) => c.id.split("/").pop() as string) ||
+                [];
               cartProductCollections.set(shortId, colIds);
             }
           });
@@ -81,21 +92,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     }
   }
 
-  // Filter offers by trigger rules
   const matchedOffer = store.offers.find((offer) => {
     if (offer.triggerType === "ALL_PRODUCTS") return true;
     if (offer.triggerType === "SPECIFIC_PRODUCTS") {
-      const normalizedCartIds = cartProductIds.map(id => id.split('/').pop());
-      const normalizedTriggerIds = offer.triggerProductIds.map(id => id.split('/').pop());
-      return normalizedCartIds.some(id => id && normalizedTriggerIds.includes(id));
+      const normalizedCartIds = cartProductIds.map((id) => id.split("/").pop());
+      const normalizedTriggerIds = offer.triggerProductIds.map((id) =>
+        id.split("/").pop(),
+      );
+      return normalizedCartIds.some(
+        (id) => id && normalizedTriggerIds.includes(id),
+      );
     }
     if (offer.triggerType === "SPECIFIC_COLLECTIONS") {
-      const normalizedTriggerIds = offer.triggerProductIds.map(id => id.split('/').pop());
-      return cartProductIds.some(cartId => {
-        const shortCartId = cartId.split('/').pop();
+      const normalizedTriggerIds = offer.triggerProductIds.map((id) =>
+        id.split("/").pop(),
+      );
+      return cartProductIds.some((cartId) => {
+        const shortCartId = cartId.split("/").pop();
         if (!shortCartId) return false;
         const colIds = cartProductCollections.get(shortCartId) || [];
-        return colIds.some(colId => normalizedTriggerIds.includes(colId));
+        return colIds.some((colId) => normalizedTriggerIds.includes(colId));
       });
     }
     return false;
@@ -130,27 +146,41 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
           }
         }
       }`,
-      { variables: { ids: rawOffer.upsellProductIds } }
+      { variables: { ids: rawOffer.upsellProductIds } },
     );
     const data = await response.json();
     const products = data.data?.nodes || [];
-    
+
     if (products.length > 0) {
-      const upsellProducts = products.filter(Boolean).map((product: any) => {
+      const upsellProducts = products.filter(Boolean).map((product: {
+        id?: string;
+        title: string;
+        handle: string;
+        featuredImage?: { url?: string };
+        variants: { edges: { node?: { id?: string; price?: string } }[] };
+      }) => {
         const variant = product.variants.edges[0]?.node;
+        const originalPrice = parseFloat(variant?.price || "0");
+        const discountedPrice = computeDiscountedPrice(
+          originalPrice,
+          rawOffer.discountType,
+          rawOffer.discountValue,
+        );
         return {
-          id: product.id?.split('/').pop(),
+          id: product.id?.split("/").pop(),
           title: product.title,
           handle: product.handle,
           image: product.featuredImage?.url || null,
-          variantId: variant?.id?.split('/').pop(),
-          originalPrice: variant?.price
+          variantId: variant?.id?.split("/").pop(),
+          originalPrice: variant?.price,
+          discountedPrice,
         };
       });
-      
+
       const enrichedOffer = {
         ...rawOffer,
-        upsellProducts
+        discountCode: rawOffer.discountCode,
+        upsellProducts,
       };
       return corsResponse({ offer: enrichedOffer });
     }
@@ -161,7 +191,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return corsResponse({ offer: rawOffer });
 };
 
-// Handle preflight requests
 export const action = async () => {
   return corsResponse({});
 };

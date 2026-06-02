@@ -23,7 +23,8 @@ function Extension() {
   const [impressionTracked, setImpressionTracked] = useState(false);
 
   const shopDomain = shop.myshopifyDomain;
-  const appUrl = `https://${shopDomain}/apps/beta-upsell/api`; 
+  const appUrl = `https://${shopDomain}/apps/beta-upsell/api`;
+  const orderId = order?.id?.split('/').pop() || null;
 
   useEffect(() => {
     async function fetchOffer() {
@@ -31,8 +32,8 @@ function Extension() {
         const productIds = order?.lines?.map((line: any) => line.merchandise?.product?.id?.split('/')?.pop())?.filter(Boolean)?.join(',') || '';
         const res = await fetch(`${appUrl}/offers?shop=${shopDomain}&placement=thank_you&productIds=${encodeURIComponent(productIds)}`);
         const data = await res.json();
-        
-        if (data && data.offer && data.offer.upsellProducts && data.offer.upsellProducts.length > 0) {
+
+        if (data?.offer?.upsellProducts?.length > 0) {
           setOffer(data.offer);
         }
       } catch (err) {
@@ -43,7 +44,7 @@ function Extension() {
     }
 
     fetchOffer();
-  }, [shopDomain, appUrl]);
+  }, [shopDomain, appUrl, order]);
 
   useEffect(() => {
     if (offer && !impressionTracked) {
@@ -55,61 +56,67 @@ function Extension() {
           shop: shopDomain,
           offerId: offer.id,
           eventType: 'shown',
-          device: 'unknown'
+          orderId,
         })
       }).catch(console.error);
     }
-  }, [offer, impressionTracked, appUrl, shopDomain]);
+  }, [offer, impressionTracked, appUrl, shopDomain, orderId]);
 
   if (loading || !offer) return null;
-
-  const handleAcceptOffer = (product: any) => {
-    // Track click
-    fetch(`${appUrl}/events`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        shop: shopDomain,
-        offerId: offer.id,
-        eventType: 'accepted',
-        upsellRevenue: product.originalPrice
-      })
-    }).catch(console.error);
-    
-    // Redirect to product page 
-    // @ts-ignore
-    window.open(`https://${shopDomain}/products/${product.handle || product.id}`, '_blank');
-  };
 
   return (
     <BlockStack spacing="loose" padding="tight" border="base" cornerRadius="base">
       <Text size="base" emphasis="bold">Special Thank You Offer!</Text>
-      
-      {offer.upsellProducts.map((product: any) => (
-        <InlineLayout
-          key={product.id}
-          spacing="base"
-          columns={['20%', 'fill', 'auto']}
-          blockAlignment="center"
-        >
-          {product.image && (
-            <Image source={product.image} />
-          )}
-          
-          <BlockStack spacing="none">
-            <Text size="base" emphasis="bold">{product.title}</Text>
-            <Text size="small" appearance="subdued">
-              {offer.discountType === 'percentage' 
-                ? `Save ${offer.discountValue}% instantly!` 
-                : `Save $${offer.discountValue} instantly!`}
-            </Text>
-          </BlockStack>
-          
-          <Button onPress={() => handleAcceptOffer(product)}>
-            Claim Offer
-          </Button>
-        </InlineLayout>
-      ))}
+
+      {offer.upsellProducts.map((product: any) => {
+        const productPath = `/products/${product.handle || product.id}`;
+        const href = offer.discountCode
+          ? `https://${shopDomain}/discount/${offer.discountCode}?redirect=${encodeURIComponent(productPath)}`
+          : `https://${shopDomain}${productPath}`;
+
+        const hint = offer.discountCode
+          ? (offer.discountType === 'percentage'
+            ? `Use code ${offer.discountCode} for ${offer.discountValue}% off`
+            : `Use code ${offer.discountCode} to save $${offer.discountValue}`)
+          : 'Shop this recommended product';
+
+        return (
+          <InlineLayout
+            key={product.id}
+            spacing="base"
+            columns={['20%', 'fill', 'auto']}
+            blockAlignment="center"
+          >
+            {product.image && <Image source={product.image} />}
+
+            <BlockStack spacing="none">
+              <Text size="base" emphasis="bold">{product.title}</Text>
+              <Text size="small" appearance="subdued">{hint}</Text>
+            </BlockStack>
+
+            <Button
+              to={href}
+              onPress={() => {
+                const revenue = product.discountedPrice ?? product.originalPrice ?? 0;
+                fetch(`${appUrl}/events`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    shop: shopDomain,
+                    offerId: offer.id,
+                    eventType: 'accepted',
+                    upsellRevenue: revenue,
+                    orderId,
+                    productId: product.id,
+                  })
+                }).catch(console.error);
+              }}
+            >
+              Claim Offer
+            </Button>
+          </InlineLayout>
+        );
+      })}
     </BlockStack>
   );
 }
