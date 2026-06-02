@@ -29,6 +29,7 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { billingIsTest } from "../utils/billing-env.server";
 import { isThemePlacement, syncThemeOffersMetafield } from "../utils/metafields.server";
+import { syncOfferDiscountCode } from "../utils/discount-codes.server";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const { session, billing } = await authenticate.admin(request);
@@ -104,6 +105,24 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
       isActive,
     },
   });
+
+  const needsDiscountCode = ["checkout", "cart", "thank_you", "product_page"].includes(
+    placement,
+  );
+  if (needsDiscountCode) {
+    const discountCode = await syncOfferDiscountCode(admin, {
+      id: existing.id,
+      name: offerName,
+      discountType,
+      discountValue,
+      upsellProductIds,
+      discountCode: existing.discountCode,
+    });
+    await prisma.offer.update({
+      where: { id: existing.id },
+      data: { discountCode },
+    });
+  }
 
   if (
     isThemePlacement(placement) ||

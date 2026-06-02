@@ -74,11 +74,14 @@ model OfferEvent {
   eventType            String   // shown, accepted, declined
   upsellRevenue        Float    @default(0.0)
   originalOrderValue   Float    @default(0.0)
+  idempotencyKey       String?
   sessionData          Json     @default("{}")
   createdAt            DateTime @default(now())
 
   store                Store    @relation(fields: [storeId], references: [id])
   offer                Offer    @relation(fields: [offerId], references: [id])
+
+  @@unique([storeId, idempotencyKey])
 }
 
 model AnalyticsDaily {

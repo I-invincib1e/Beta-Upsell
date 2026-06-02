@@ -2,10 +2,11 @@ import { json } from "@remix-run/node";
 import type { ActionFunctionArgs } from "@remix-run/node";
 import prisma from "../db.server";
 import { assertStorefrontApiAccess } from "../utils/app-proxy.server";
+import { buildEventIdempotencyKey } from "../utils/events-idempotency.server";
 
 const ALLOWED_EVENT_TYPES = ["shown", "accepted", "declined"] as const;
 
-function corsResponse(data: any, status = 200) {
+function corsResponse(data: unknown, status = 200) {
   return json(data, {
     status,
     headers: {
@@ -25,20 +26,69 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return corsResponse({ error: "Method not allowed" }, 405);
   }
 
+  const access = assertStorefrontApiAccess(request);
+  if (!access.ok) {
+    return corsResponse({ error: access.error ?? "Unauthorized" }, 401);
+  }
+
   try {
     const body = await request.json();
-    const { shop, offerId, eventType, upsellRevenue = 0, orderId = null, customerId = null } = body;
+    const {
+      shop,
+      offerId,
+      eventType,
+      upsellRevenue = 0,
+      orderId = null,
+      customerId = null,
+      sessionId = null,
+      productId = null,
+      idempotencyKey: clientKey = null,
+    } = body;
 
-    if (!shop || !offerId || !eventType) {
+    const shopDomain = shop || access.shop;
+    if (!shopDomain || !offerId || !eventType) {
       return corsResponse({ error: "Missing required fields" }, 400);
     }
 
-    const store = await prisma.store.findUnique({ where: { shopDomain: shop } });
+    if (!ALLOWED_EVENT_TYPES.includes(eventType)) {
+      return corsResponse({ error: "Invalid eventType" }, 400);
+    }
+
+    const store = await prisma.store.findUnique({ where: { shopDomain } });
     if (!store) {
       return corsResponse({ error: "Store not found" }, 404);
     }
 
-    // Record the raw event
+    const offer = await prisma.offer.findFirst({
+      where: { id: offerId, storeId: store.id },
+    });
+    if (!offer) {
+      return corsResponse({ error: "Offer not found" }, 404);
+    }
+
+    const idempotencyKey =
+      clientKey ||
+      buildEventIdempotencyKey({
+        offerId,
+        eventType,
+        orderId,
+        sessionId,
+        productId,
+      });
+
+    const existing = await prisma.offerEvent.findUnique({
+      where: {
+        storeId_idempotencyKey: {
+          storeId: store.id,
+          idempotencyKey,
+        },
+      },
+    });
+
+    if (existing) {
+      return corsResponse({ success: true, duplicate: true });
+    }
+
     await prisma.offerEvent.create({
       data: {
         storeId: store.id,
@@ -47,14 +97,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         upsellRevenue,
         orderId,
         customerId,
+        idempotencyKey,
       },
     });
 
-    // Upsert the AnalyticsDaily aggregation
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const analyticsUpdate: any = {};
+    const analyticsUpdate: Record<string, unknown> = {};
     if (eventType === "shown") {
       analyticsUpdate.impressions = { increment: 1 };
     } else if (eventType === "accepted") {
@@ -85,8 +135,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
 
     return corsResponse({ success: true });
-  } catch (err: any) {
-    return corsResponse({ error: err.message }, 500);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return corsResponse({ error: message }, 500);
   }
 };
 

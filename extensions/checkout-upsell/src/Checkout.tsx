@@ -3,6 +3,7 @@ import {
   useApi,
   useCartLines,
   useApplyCartLinesChange,
+  useApplyDiscountCodeChange,
   Banner,
   BlockStack,
   Button,
@@ -20,6 +21,7 @@ export default reactExtension(
 function Extension() {
   const { shop } = useApi();
   const applyCartLinesChange = useApplyCartLinesChange();
+  const applyDiscountCodeChange = useApplyDiscountCodeChange();
   const cartLines = useCartLines();
 
   const [offer, setOffer] = useState<any>(null);
@@ -28,15 +30,12 @@ function Extension() {
   const [hasError, setHasError] = useState(false);
   const [impressionTracked, setImpressionTracked] = useState(false);
 
-  // Note: For a production app, the shop domain can be retrieved from shop.myshopifyDomain
   const shopDomain = shop.myshopifyDomain;
-  // Construct proxy URL or fallback to the app URL
-  // We'll use the Shopify App Proxy to hit our backend securely. If proxy isn't set up, we could use an absolute URL.
-  const appUrl = `https://${shopDomain}/apps/beta-upsell/api`; 
+  const appUrl = `https://${shopDomain}/apps/beta-upsell/api`;
+  const sessionId = `checkout-${shopDomain}`;
 
   useEffect(() => {
-    // Check if the cart already has an item with our offer ID property to avoid showing it if already added
-    const hasUpsellInCart = cartLines.some(line => 
+    const hasUpsellInCart = cartLines.some(line =>
       line.attributes?.some(attr => attr.key === '_upsell_offer_id')
     );
 
@@ -50,13 +49,12 @@ function Extension() {
         const productIds = cartLines.map(line => line.merchandise.product?.id || '').filter(Boolean).join(',');
         const res = await fetch(`${appUrl}/offers?shop=${shopDomain}&placement=checkout&productIds=${encodeURIComponent(productIds)}`);
         const data = await res.json();
-        
+
         if (data && data.offer && data.offer.upsellProducts) {
-          // Filter out products already in cart
-          const availableUpsells = data.offer.upsellProducts.filter((upsell: any) => 
+          const availableUpsells = data.offer.upsellProducts.filter((upsell: any) =>
             !cartLines.some(line => line.merchandise.id.includes(upsell.variantId))
           );
-          
+
           if (availableUpsells.length > 0) {
             setOffer({ ...data.offer, upsellProducts: availableUpsells });
           }
@@ -81,11 +79,11 @@ function Extension() {
           shop: shopDomain,
           offerId: offer.id,
           eventType: 'shown',
-          device: 'unknown' // Checkout UI extensions don't expose device easily
+          sessionId,
         })
       }).catch(console.error);
     }
-  }, [offer, impressionTracked, appUrl, shopDomain]);
+  }, [offer, impressionTracked, appUrl, shopDomain, sessionId]);
 
   if (loading || !offer) return null;
 
@@ -94,6 +92,16 @@ function Extension() {
     setHasError(false);
 
     try {
+      if (offer.discountCode) {
+        const discountResult = await applyDiscountCodeChange({
+          type: 'addDiscountCode',
+          code: offer.discountCode,
+        });
+        if (discountResult.type === 'error') {
+          console.warn('Discount code could not be applied:', discountResult.message);
+        }
+      }
+
       const result = await applyCartLinesChange({
         type: 'addCartLine',
         merchandiseId: `gid://shopify/ProductVariant/${product.variantId}`,
@@ -107,6 +115,7 @@ function Extension() {
         setHasError(true);
         setAdding(false);
       } else {
+        const revenue = product.discountedPrice ?? product.originalPrice ?? 0;
         fetch(`${appUrl}/events`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -114,11 +123,12 @@ function Extension() {
             shop: shopDomain,
             offerId: offer.id,
             eventType: 'accepted',
-            upsellRevenue: product.originalPrice
+            upsellRevenue: revenue,
+            sessionId,
+            productId: product.id,
           })
         }).catch(console.error);
-        
-        // Remove the added product from the list of upsells
+
         const remaining = offer.upsellProducts.filter((p: any) => p.id !== product.id);
         if (remaining.length > 0) {
           setOffer({ ...offer, upsellProducts: remaining });
@@ -134,10 +144,16 @@ function Extension() {
     }
   }
 
+  const discountHint = offer.discountCode
+    ? (offer.discountType === 'percentage'
+      ? `Includes ${offer.discountValue}% off with code ${offer.discountCode}`
+      : `Includes $${offer.discountValue} off with code ${offer.discountCode}`)
+    : 'Recommended add-on for your order';
+
   return (
     <BlockStack spacing="loose" padding="tight" border="base" cornerRadius="base">
       <Text size="base" emphasis="bold">Wait! Complete your order with this special offer</Text>
-      
+
       {hasError && (
         <Banner status="critical">
           There was an issue adding this item to your order.
@@ -154,14 +170,14 @@ function Extension() {
           {product.image && (
             <Image source={product.image} />
           )}
-          
+
           <BlockStack spacing="none">
             <Text size="base" emphasis="bold">{product.title}</Text>
             <Text size="small" appearance="subdued">
-              Recommended add-on for your order
+              {discountHint}
             </Text>
           </BlockStack>
-          
+
           <Button
             loading={adding === product.id}
             onPress={() => handleAddOffer(product)}
