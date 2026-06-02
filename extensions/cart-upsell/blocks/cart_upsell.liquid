@@ -4,6 +4,7 @@
 
 {% if active_offers %}
   {% for offer in active_offers %}
+    {% if offer.type != 'cart' and offer.type != blank %}{% continue %}{% endif %}
     {% if offer.triggerType == 'ALL_PRODUCTS' %}
       {% assign matched_offer = offer %}
       {% break %}
@@ -66,7 +67,7 @@
           {% unless in_cart %}
             <div style="display: flex; align-items: center; gap: 16px;">
               <a href="{{ upsell_product.url }}" style="flex-shrink: 0;">
-                <img src="{{ upsell_product.featured_image | img_url: '120x120', crop: 'center' }}" alt="{{ upsell_product.title }}" style="width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #eee;">
+                <img width="80" height="80" src="{{ upsell_product.featured_image | img_url: '120x120', crop: 'center' }}" alt="{{ upsell_product.title }}" style="width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #eee;">
               </a>
               
               <div style="flex-grow: 1; min-width: 0;">

@@ -5,6 +5,7 @@
 
 {% if active_offers %}
   {% for offer in active_offers %}
+    {% unless offer.type == 'product_page' %}{% continue %}{% endunless %}
     {% if offer.triggerType == 'ALL_PRODUCTS' %}
       {% assign matched_offer = offer %}
       {% break %}
@@ -61,7 +62,7 @@
       {% if block.settings.layout_style == 'minimal' %}
         <!-- MINIMAL LAYOUT -->
         <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 15px;">
-          <img src="{{ upsell_product.featured_image | img_url: '80x80', crop: 'center' }}" style="border-radius: {{ block.settings.border_radius }}px; width: 60px; height: 60px;">
+          <img width="80" height="80" src="{{ upsell_product.featured_image | img_url: '80x80', crop: 'center' }}" style="border-radius: {{ block.settings.border_radius }}px; width: 60px; height: 60px;">
           <div style="flex-grow: 1;">
             <div style="font-weight: bold; color: {{ block.settings.text_color }}">{{ upsell_product.title }}</div>
             <div style="color: {{ block.settings.text_color }}">+ <span id="beta_fbt_upsell_price" data-price="{{ final_upsell_price }}">{{ final_upsell_price | money }}</span></div>
@@ -73,14 +74,14 @@
         <!-- CARDS LAYOUT -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
           <div style="border: 2px solid {{ block.settings.border_color }}; padding: 10px; border-radius: {{ block.settings.border_radius }}px; text-align: center;">
-            <img src="{{ product.featured_image | img_url: '100x100', crop: 'center' }}" style="width: 100%; border-radius: 4px;">
+            <img width="80" height="80" src="{{ product.featured_image | img_url: '100x100', crop: 'center' }}" style="width: 100%; border-radius: 4px;">
             <div style="font-weight: bold; margin-top: 5px; font-size: 12px; color: {{ block.settings.text_color }}">{{ product.title }}</div>
           </div>
           <div style="border: 2px solid {{ btn_color }}; padding: 10px; border-radius: {{ block.settings.border_radius }}px; text-align: center; position: relative;">
             {% if block.settings.show_discount_badge and discount_pct > 0 %}
               <div style="position: absolute; top: -10px; right: -10px; background: #e74c3c; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: bold;">Save {{ discount_pct }}%</div>
             {% endif %}
-            <img src="{{ upsell_product.featured_image | img_url: '100x100', crop: 'center' }}" style="width: 100%; border-radius: 4px;">
+            <img width="80" height="80" src="{{ upsell_product.featured_image | img_url: '100x100', crop: 'center' }}" style="width: 100%; border-radius: 4px;">
             <div style="font-weight: bold; margin-top: 5px; font-size: 12px; color: {{ block.settings.text_color }}">{{ upsell_product.title }}</div>
             <input type="checkbox" id="beta_fbt_checkbox" checked style="margin-top: 5px;">
             <span id="beta_fbt_upsell_price" data-price="{{ final_upsell_price }}" style="display:none;"></span>
@@ -91,14 +92,14 @@
         <!-- CLASSIC LAYOUT -->
         <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px;">
           <div style="position: relative;">
-            <img src="{{ product.featured_image | img_url: '100x100', crop: 'center' }}" alt="{{ product.title }}" style="width: 80px; height: 80px; object-fit: cover; border-radius: {{ block.settings.border_radius }}px; border: 1px solid #eee;">
+            <img width="80" height="80" src="{{ product.featured_image | img_url: '100x100', crop: 'center' }}" alt="{{ product.title }}" style="width: 80px; height: 80px; object-fit: cover; border-radius: {{ block.settings.border_radius }}px; border: 1px solid #eee;">
           </div>
           <div style="font-size: 20px; font-weight: bold; color: #888;">+</div>
           <div style="position: relative;">
             {% if block.settings.show_discount_badge and discount_pct > 0 %}
               <div style="position: absolute; top: -8px; right: -8px; background: #e74c3c; color: white; padding: 2px 6px; border-radius: 10px; font-size: 10px; font-weight: bold; z-index: 2;">Save {{ discount_pct }}%</div>
             {% endif %}
-            <img src="{{ upsell_product.featured_image | img_url: '100x100', crop: 'center' }}" alt="{{ upsell_product.title }}" style="width: 80px; height: 80px; object-fit: cover; border-radius: {{ block.settings.border_radius }}px; border: 1px solid #eee;">
+            <img width="80" height="80" src="{{ upsell_product.featured_image | img_url: '100x100', crop: 'center' }}" alt="{{ upsell_product.title }}" style="width: 80px; height: 80px; object-fit: cover; border-radius: {{ block.settings.border_radius }}px; border: 1px solid #eee;">
           </div>
         </div>
         

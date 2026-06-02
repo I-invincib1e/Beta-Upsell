@@ -133,7 +133,7 @@ export function App({ extensionPoint, storage }) {
   const handleDecline = async () => {
     setIsDeclining(true);
     try {
-      await fetch(`${APP_URL}/api/events`, {
+      await fetch(`${getStorefrontApiBase(shopDomain)}/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

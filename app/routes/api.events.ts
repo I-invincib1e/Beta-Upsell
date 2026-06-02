@@ -1,6 +1,9 @@
 import { json } from "@remix-run/node";
 import type { ActionFunctionArgs } from "@remix-run/node";
 import prisma from "../db.server";
+import { assertStorefrontApiAccess } from "../utils/app-proxy.server";
+
+const ALLOWED_EVENT_TYPES = ["shown", "accepted", "declined"] as const;
 
 function corsResponse(data: any, status = 200) {
   return json(data, {

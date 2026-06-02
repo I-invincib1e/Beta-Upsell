@@ -28,7 +28,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const billingCheck = await billing.check({
     // @ts-ignore
     plans: ["Pro Plan"],
-    isTest: billingIsTest(),
+    isTest: true,
   });
 
   const activePlan = billingCheck.hasActivePayment 
@@ -87,7 +87,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const billingCheck = await billing.check({
     // @ts-ignore
     plans: ["Pro Plan"],
-    isTest: billingIsTest(),
+    isTest: true,
   });
 
   const activePlan = billingCheck.hasActivePayment ? billingCheck.appSubscriptions[0].name : null;
@@ -277,7 +277,7 @@ export default function NewOffer() {
 
   return (
     <Page
-      backAction={{ content: "Dashboard", onAction: () => navigate("/app") }}
+      backAction={{ content: "Offers", onAction: () => navigate("/app/offers") }}
       title="Create New Offer"
     >
       <TitleBar title="Create New Offer">

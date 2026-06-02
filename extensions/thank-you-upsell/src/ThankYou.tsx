@@ -11,7 +11,7 @@ import {
 import { useEffect, useState } from 'react';
 
 export default reactExtension(
-  'purchase.thank.you.block.render',
+  'purchase.thank-you.block.render',
   () => <Extension />,
 );
 
