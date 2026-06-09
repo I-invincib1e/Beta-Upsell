@@ -101,8 +101,21 @@ export function MobilePreview({ widgetType, widgetConfig, placement }: MobilePre
             {widgetType === "survey" && (
               <SurveyPreview config={widgetConfig} />
             )}
+            {widgetType === "loyalty_points" && (
+              <LoyaltyPointsPreview config={widgetConfig} />
+            )}
+            {widgetType === "reorder_upsell" && (
+              <ReorderUpsellPreview config={widgetConfig} />
+            )}
+            {widgetType === "related_collection" && (
+              <RelatedCollectionPreview config={widgetConfig} />
+            )}
+            {widgetType === "birthday_capture" && (
+              <BirthdayCapturePreview config={widgetConfig} />
+            )}
             {!["product_upsell", "discount_timer", "cross_sell", "order_bump",
-              "bundle_offer", "review_request", "free_shipping_bar", "social_share", "survey"
+              "bundle_offer", "review_request", "free_shipping_bar", "social_share", "survey",
+              "loyalty_points", "reorder_upsell", "related_collection", "birthday_capture"
             ].includes(widgetType) && (
               <div
                 style={{
@@ -493,6 +506,123 @@ function SurveyPreview({ config }: { config: any }) {
       {config.allowSkip !== false && (
         <div style={{ textAlign: "center", marginTop: "8px", fontSize: "12px", color: "#6b7280", cursor: "default" }}>Skip</div>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// Sprint 5 — Pro Widget Preview Components
+// ============================================================
+
+function LoyaltyPointsPreview({ config }: { config: any }) {
+  const points = Math.round((config.pointsPerDollar || 1) * 49.99);
+  const desc = (config.description || "You've earned {points} points with this purchase.").replace("{points}", String(points));
+
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "16px", backgroundColor: "#fff", textAlign: "center" }}>
+      <div style={{ fontSize: "32px", marginBottom: "8px" }}>💎</div>
+      <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "4px" }}>
+        {config.heading || "You earned points!"}
+      </div>
+      <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "12px" }}>
+        {desc}
+      </div>
+      <div style={{ display: "inline-block", padding: "6px 16px", background: "linear-gradient(135deg, #8b5cf6, #a78bfa)", color: "#fff", borderRadius: "20px", fontSize: "18px", fontWeight: 700 }}>
+        +{points} pts
+      </div>
+      {config.smileIntegration && (
+        <div style={{ fontSize: "11px", color: "#8b5cf6", marginTop: "8px" }}>Powered by Smile.io</div>
+      )}
+    </div>
+  );
+}
+
+function ReorderUpsellPreview({ config }: { config: any }) {
+  const items = Array.from({ length: config.maxItems || 3 }, (_, i) => i + 1);
+
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "16px", backgroundColor: "#fff" }}>
+      <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "4px" }}>
+        {config.heading || "Order Again?"}
+      </div>
+      <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "12px" }}>
+        {config.description || "Re-order your favorites with one click."}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {items.map((i) => (
+          <div key={i} style={{ display: "flex", gap: "10px", alignItems: "center", padding: "8px", borderRadius: "6px", border: "1px solid #f3f4f6" }}>
+            <div style={{ width: "40px", height: "40px", backgroundColor: "#f3f4f6", borderRadius: "6px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px" }}>🔄</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: "12px", fontWeight: 500 }}>Past Purchase {i}</div>
+              <div style={{ fontSize: "11px", color: "#6b7280" }}>$24.99</div>
+            </div>
+            <button style={{ padding: "4px 12px", background: "#6366f1", color: "#fff", border: "none", borderRadius: "4px", fontSize: "11px", fontWeight: 600, cursor: "default" }}>
+              {config.buttonText || "Reorder"}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RelatedCollectionPreview({ config }: { config: any }) {
+  const items = Array.from({ length: config.maxItems || 4 }, (_, i) => i + 1);
+  const layout = config.layout || "grid";
+
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "16px", backgroundColor: "#fff" }}>
+      <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "12px" }}>
+        {config.heading || "More from this collection"}
+      </div>
+      <div style={{
+        display: layout === "grid" ? "grid" : "flex",
+        gridTemplateColumns: layout === "grid" ? "repeat(2, 1fr)" : undefined,
+        gap: "8px",
+        overflowX: layout === "carousel" ? "auto" : undefined,
+      }}>
+        {items.map((i) => (
+          <div key={i} style={{
+            flex: layout === "carousel" ? "0 0 120px" : undefined,
+            backgroundColor: "#f9fafb",
+            borderRadius: "6px",
+            padding: "10px",
+            textAlign: "center",
+          }}>
+            <div style={{ width: "100%", aspectRatio: "1", backgroundColor: "#e5e7eb", borderRadius: "4px", marginBottom: "6px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "20px" }}>📦</div>
+            <div style={{ fontSize: "11px", fontWeight: 500 }}>Item {i}</div>
+            <div style={{ fontSize: "11px", color: "#16a34a" }}>$19.99</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BirthdayCapturePreview({ config }: { config: any }) {
+  return (
+    <div style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "16px", backgroundColor: "#fff", textAlign: "center" }}>
+      <div style={{ fontSize: "32px", marginBottom: "8px" }}>🎂</div>
+      <div style={{ fontSize: "14px", fontWeight: 600, marginBottom: "4px" }}>
+        {config.heading || "When's your birthday?"}
+      </div>
+      <div style={{ fontSize: "12px", color: "#6b7280", marginBottom: "12px" }}>
+        {config.description || "Tell us and we'll send you a special surprise!"}
+      </div>
+      <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginBottom: "12px" }}>
+        <select style={{ padding: "8px", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "13px" }}>
+          <option>Month</option>
+        </select>
+        <select style={{ padding: "8px", borderRadius: "6px", border: "1px solid #d1d5db", fontSize: "13px" }}>
+          <option>Day</option>
+        </select>
+      </div>
+      <div style={{ fontSize: "11px", color: "#8b5cf6", fontWeight: 600, marginBottom: "12px" }}>
+        {config.incentiveText || "Get a special birthday discount!"}
+      </div>
+      <button style={{ padding: "8px 24px", background: "linear-gradient(135deg, #ec4899, #f97316)", color: "#fff", border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 600, cursor: "default" }}>
+        Save My Birthday
+      </button>
     </div>
   );
 }

@@ -52,6 +52,7 @@ export default function App() {
           Dashboard
         </Link>
         <Link to="/app/funnels">Funnels</Link>
+        <Link to="/app/widgets">Widgets</Link>
         <Link to="/app/analytics">Analytics</Link>
         <Link to="/app/pricing">Pricing</Link>
         <Link to="/app/settings">Settings</Link>

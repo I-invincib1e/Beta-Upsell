@@ -106,13 +106,30 @@ export function StepConfigPanel({ step, onUpdateConfig, onClose }: StepConfigPan
           <SurveyConfig config={config} onChange={updateField} />
         )}
 
+        {widgetType === "loyalty_points" && (
+          <LoyaltyPointsConfig config={config} onChange={updateField} />
+        )}
+
+        {widgetType === "reorder_upsell" && (
+          <ReorderUpsellConfig config={config} onChange={updateField} />
+        )}
+
+        {widgetType === "related_collection" && (
+          <RelatedCollectionConfig config={config} onChange={updateField} />
+        )}
+
+        {widgetType === "birthday_capture" && (
+          <BirthdayCaptureConfig config={config} onChange={updateField} />
+        )}
+
         {!["product_upsell", "discount_timer", "cross_sell", "order_bump",
-          "bundle_offer", "review_request", "free_shipping_bar", "social_share", "survey"
+          "bundle_offer", "review_request", "free_shipping_bar", "social_share", "survey",
+          "loyalty_points", "reorder_upsell", "related_collection", "birthday_capture"
         ].includes(widgetType) && (
           <BlockStack gap="200">
             <Text as="p" tone="subdued">
-              Configuration for "{widgetType.replace(/_/g, " ")}" widgets will be
-              available in a future sprint.
+              Configuration for "{widgetType.replace(/_/g, " ")}" widgets is not
+              yet available.
             </Text>
             <TextField
               label="Widget Name"
@@ -695,6 +712,201 @@ function SurveyConfig({
         onChange={(val) => onChange("rewardCode", val)}
         autoComplete="off"
         helpText="Optional: offer a discount code as a thank-you for responding"
+      />
+    </BlockStack>
+  );
+}
+
+// ============================================================
+// Sprint 5 — Pro widget config forms
+// ============================================================
+
+function LoyaltyPointsConfig({
+  config,
+  onChange,
+}: {
+  config: any;
+  onChange: (field: string, value: any) => void;
+}) {
+  return (
+    <BlockStack gap="300">
+      <TextField
+        label="Heading"
+        value={config.heading || ""}
+        onChange={(val) => onChange("heading", val)}
+        autoComplete="off"
+      />
+      <TextField
+        label="Description"
+        value={config.description || ""}
+        onChange={(val) => onChange("description", val)}
+        autoComplete="off"
+        multiline={2}
+        helpText="Use {points} for earned points. E.g. 'You earned {points} points!'"
+      />
+      <TextField
+        label="Points Per Dollar"
+        type="number"
+        value={String(config.pointsPerDollar || "")}
+        onChange={(val) => onChange("pointsPerDollar", parseInt(val) || 1)}
+        autoComplete="off"
+        helpText="How many points are awarded per dollar spent"
+      />
+      <Checkbox
+        label="Enable Smile.io integration"
+        checked={config.smileIntegration === true}
+        onChange={(val) => onChange("smileIntegration", val)}
+      />
+      {config.smileIntegration && (
+        <TextField
+          label="Smile.io API Key"
+          value={config.smileApiKey || ""}
+          onChange={(val) => onChange("smileApiKey", val)}
+          autoComplete="off"
+          helpText="Found in Smile.io dashboard → Settings → API"
+        />
+      )}
+    </BlockStack>
+  );
+}
+
+function ReorderUpsellConfig({
+  config,
+  onChange,
+}: {
+  config: any;
+  onChange: (field: string, value: any) => void;
+}) {
+  return (
+    <BlockStack gap="300">
+      <TextField
+        label="Heading"
+        value={config.heading || ""}
+        onChange={(val) => onChange("heading", val)}
+        autoComplete="off"
+      />
+      <TextField
+        label="Description"
+        value={config.description || ""}
+        onChange={(val) => onChange("description", val)}
+        autoComplete="off"
+        multiline={2}
+      />
+      <TextField
+        label="Max Items to Show"
+        type="number"
+        value={String(config.maxItems || "")}
+        onChange={(val) => onChange("maxItems", parseInt(val) || 3)}
+        autoComplete="off"
+        helpText="How many past-purchase items to show"
+      />
+      <Select
+        label="Discount Type"
+        options={[
+          { label: "Percentage (%)", value: "percentage" },
+          { label: "Fixed Amount ($)", value: "fixed_amount" },
+          { label: "No Discount", value: "none" },
+        ]}
+        value={config.discountType || "none"}
+        onChange={(val) => onChange("discountType", val)}
+      />
+      {config.discountType !== "none" && (
+        <TextField
+          label="Discount Value"
+          type="number"
+          value={String(config.discountValue || "")}
+          onChange={(val) => onChange("discountValue", parseFloat(val) || 0)}
+          autoComplete="off"
+          suffix={config.discountType === "percentage" ? "%" : "$"}
+        />
+      )}
+      <TextField
+        label="Button Text"
+        value={config.buttonText || "Reorder"}
+        onChange={(val) => onChange("buttonText", val)}
+        autoComplete="off"
+      />
+    </BlockStack>
+  );
+}
+
+function RelatedCollectionConfig({
+  config,
+  onChange,
+}: {
+  config: any;
+  onChange: (field: string, value: any) => void;
+}) {
+  return (
+    <BlockStack gap="300">
+      <TextField
+        label="Heading"
+        value={config.heading || ""}
+        onChange={(val) => onChange("heading", val)}
+        autoComplete="off"
+      />
+      <TextField
+        label="Collection ID"
+        value={config.collectionId || ""}
+        onChange={(val) => onChange("collectionId", val)}
+        autoComplete="off"
+        helpText="Shopify Collection ID (numeric). Resource picker coming soon."
+      />
+      <TextField
+        label="Max Items"
+        type="number"
+        value={String(config.maxItems || "")}
+        onChange={(val) => onChange("maxItems", parseInt(val) || 4)}
+        autoComplete="off"
+      />
+      <Select
+        label="Layout"
+        options={[
+          { label: "Grid", value: "grid" },
+          { label: "Carousel", value: "carousel" },
+        ]}
+        value={config.layout || "grid"}
+        onChange={(val) => onChange("layout", val)}
+      />
+    </BlockStack>
+  );
+}
+
+function BirthdayCaptureConfig({
+  config,
+  onChange,
+}: {
+  config: any;
+  onChange: (field: string, value: any) => void;
+}) {
+  return (
+    <BlockStack gap="300">
+      <TextField
+        label="Heading"
+        value={config.heading || ""}
+        onChange={(val) => onChange("heading", val)}
+        autoComplete="off"
+      />
+      <TextField
+        label="Description"
+        value={config.description || ""}
+        onChange={(val) => onChange("description", val)}
+        autoComplete="off"
+        multiline={2}
+      />
+      <TextField
+        label="Incentive Text"
+        value={config.incentiveText || ""}
+        onChange={(val) => onChange("incentiveText", val)}
+        autoComplete="off"
+        helpText="What the customer gets for sharing their birthday"
+      />
+      <TextField
+        label="Birthday Discount Code"
+        value={config.discountCode || ""}
+        onChange={(val) => onChange("discountCode", val)}
+        autoComplete="off"
+        helpText="Discount code to send on their birthday"
       />
     </BlockStack>
   );
