@@ -46,7 +46,7 @@ export function PlanGate({
   if (inline) {
     return (
       <InlineStack gap="200" blockAlign="center">
-        <Badge tone="attention">{TIER_NAMES[requiredTier]}+</Badge>
+        <Badge tone="attention">{`${TIER_NAMES[requiredTier]}+`}</Badge>
         <Text as="span" variant="bodySm" tone="subdued">
           {featureName} requires the {TIER_NAMES[requiredTier]} plan or higher.
         </Text>
@@ -67,7 +67,7 @@ export function PlanGate({
               {featureName}
             </Text>
           </InlineStack>
-          <Badge tone="attention">{TIER_NAMES[requiredTier]}+ Plan Required</Badge>
+          <Badge tone="attention">{`${TIER_NAMES[requiredTier]}+ Plan Required`}</Badge>
         </InlineStack>
         <Text as="p" variant="bodyMd" tone="subdued">
           This feature is available on the <b>{TIER_NAMES[requiredTier]}</b> plan

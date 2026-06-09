@@ -4,22 +4,16 @@
  * Receives events from extensions (impression, click, conversion).
  * Supports both legacy offerId-based events AND new funnelId/stepId events.
  * Aggregates into AnalyticsDaily for real-time dashboard.
+ *
+ * Sprint 6: Fixed FK violation for funnel-based events.
+ * Legacy events (offerId) → write OfferEvent + upsert AnalyticsDaily by offerId
+ * Funnel events (funnelId) → upsert AnalyticsDaily by funnelId (skip OfferEvent)
  */
 
 import { json } from "@remix-run/node";
 import type { ActionFunctionArgs } from "@remix-run/node";
 import prisma from "../db.server";
-
-function corsResponse(data: any, status = 200) {
-  return json(data, {
-    status,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    },
-  });
-}
+import { corsResponse } from "../utils/cors.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method === "OPTIONS") {
@@ -57,81 +51,97 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return corsResponse({ error: "Store not found" }, 404);
     }
 
-    // Determine the offerId for backward compat
-    // If funnelId is provided, use it as the offerId in AnalyticsDaily
-    // (the offerId field will be repurposed to accept funnel IDs too)
-    const effectiveOfferId = offerId || funnelId;
+    const revenue = parseFloat(String(upsellRevenue)) || 0;
 
-    // Record the raw event in OfferEvent (legacy table, still useful for audit)
-    try {
-      await prisma.offerEvent.create({
-        data: {
-          storeId: store.id,
-          offerId: effectiveOfferId,
-          eventType,
-          upsellRevenue: parseFloat(String(upsellRevenue)) || 0,
-          orderId,
-          customerId,
-          sessionData: {
-            funnelId: funnelId || null,
-            stepId: stepId || null,
-            variantKey: variantKey || null,
-          },
-        },
-      });
-    } catch (err) {
-      // OfferEvent creation can fail if offerId doesn't match an Offer.
-      // This is expected for funnel-based events. Log but don't fail.
-      console.warn("OfferEvent creation skipped (likely funnel-based event):", err);
-    }
-
-    // Upsert the AnalyticsDaily aggregation
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
+    // Build the analytics increment
     const analyticsUpdate: any = {};
     if (eventType === "shown") {
       analyticsUpdate.impressions = { increment: 1 };
     } else if (eventType === "accepted") {
       analyticsUpdate.accepts = { increment: 1 };
-      analyticsUpdate.totalUpsellRevenue = {
-        increment: parseFloat(String(upsellRevenue)) || 0,
-      };
+      analyticsUpdate.totalUpsellRevenue = { increment: revenue };
     } else if (eventType === "declined") {
       analyticsUpdate.declines = { increment: 1 };
     }
 
-    await prisma.analyticsDaily.upsert({
-      where: {
-        storeId_offerId_date: {
-          storeId: store.id,
-          offerId: effectiveOfferId,
-          date: today,
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (offerId && !funnelId) {
+      // ── LEGACY PATH: offerId-based event ──
+      // Write raw OfferEvent (FK to Offer table)
+      try {
+        await prisma.offerEvent.create({
+          data: {
+            storeId: store.id,
+            offerId,
+            eventType,
+            upsellRevenue: revenue,
+            orderId,
+            customerId,
+          },
+        });
+      } catch (err) {
+        console.warn("OfferEvent creation failed (offer may be deleted):", err);
+      }
+
+      // Upsert AnalyticsDaily keyed by offerId
+      await prisma.analyticsDaily.upsert({
+        where: {
+          storeId_offerId_funnelId_date_variantKey: {
+            storeId: store.id,
+            offerId,
+            funnelId: null as any,
+            date: today,
+            variantKey: null as any,
+          },
         },
-      },
-      update: {
-        ...analyticsUpdate,
-        // Update funnel-scoped fields if provided
-        ...(funnelId ? { funnelId } : {}),
-        ...(stepId ? { stepId } : {}),
-        ...(variantKey ? { variantKey } : {}),
-      },
-      create: {
-        storeId: store.id,
-        offerId: effectiveOfferId,
-        date: today,
-        impressions: eventType === "shown" ? 1 : 0,
-        accepts: eventType === "accepted" ? 1 : 0,
-        declines: eventType === "declined" ? 1 : 0,
-        totalUpsellRevenue:
-          eventType === "accepted"
-            ? parseFloat(String(upsellRevenue)) || 0
-            : 0,
-        funnelId: funnelId || null,
-        stepId: stepId || null,
-        variantKey: variantKey || null,
-      },
-    });
+        update: analyticsUpdate,
+        create: {
+          storeId: store.id,
+          offerId,
+          funnelId: null,
+          date: today,
+          impressions: eventType === "shown" ? 1 : 0,
+          accepts: eventType === "accepted" ? 1 : 0,
+          declines: eventType === "declined" ? 1 : 0,
+          totalUpsellRevenue: eventType === "accepted" ? revenue : 0,
+          variantKey: null,
+        },
+      });
+    } else {
+      // ── FUNNEL PATH: funnelId-based event ──
+      // No OfferEvent (no FK constraint to Offer)
+      const effectiveVariant = variantKey || null;
+
+      await prisma.analyticsDaily.upsert({
+        where: {
+          storeId_offerId_funnelId_date_variantKey: {
+            storeId: store.id,
+            offerId: null as any,
+            funnelId: funnelId,
+            date: today,
+            variantKey: effectiveVariant as any,
+          },
+        },
+        update: {
+          ...analyticsUpdate,
+          ...(stepId ? { stepId } : {}),
+        },
+        create: {
+          storeId: store.id,
+          offerId: null,
+          funnelId,
+          stepId: stepId || null,
+          date: today,
+          impressions: eventType === "shown" ? 1 : 0,
+          accepts: eventType === "accepted" ? 1 : 0,
+          declines: eventType === "declined" ? 1 : 0,
+          totalUpsellRevenue: eventType === "accepted" ? revenue : 0,
+          variantKey: effectiveVariant,
+        },
+      });
+    }
 
     return corsResponse({ success: true });
   } catch (err: any) {

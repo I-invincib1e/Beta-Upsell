@@ -117,7 +117,7 @@ export async function getTopOffers(storeId: string, limit = 10, dateRange?: Date
     take: limit,
   });
 
-  const offerIds = grouped.map((g) => g.offerId);
+  const offerIds = grouped.map((g) => g.offerId).filter((id): id is string => id !== null);
   const offers = await prisma.offer.findMany({
     where: { id: { in: offerIds } },
     select: { id: true, name: true, type: true },
@@ -126,7 +126,7 @@ export async function getTopOffers(storeId: string, limit = 10, dateRange?: Date
   const offerMap = new Map(offers.map((o) => [o.id, o]));
 
   return grouped.map((g) => {
-    const offer = offerMap.get(g.offerId);
+    const offer = g.offerId ? offerMap.get(g.offerId) : undefined;
     const imp = g._sum.impressions || 0;
     const acc = g._sum.accepts || 0;
     return {

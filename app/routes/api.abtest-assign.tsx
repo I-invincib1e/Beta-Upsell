@@ -8,17 +8,7 @@
 import { json } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import { assignVariant, getRunningTestForFunnel } from "../utils/abtest.server";
-
-function corsResponse(data: any, status = 200) {
-  return json(data, {
-    status,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
-  });
-}
+import { corsResponse } from "../utils/cors.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);

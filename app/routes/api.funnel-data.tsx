@@ -13,17 +13,7 @@ import { json } from "@remix-run/node";
 import type { LoaderFunctionArgs } from "@remix-run/node";
 import prisma from "../db.server";
 import { unauthenticated } from "../shopify.server";
-
-function corsResponse(data: any, status = 200) {
-  return json(data, {
-    status,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    },
-  });
-}
+import { corsResponse } from "../utils/cors.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
@@ -195,7 +185,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     funnelId: matchedFunnel.id,
   };
 
-  return corsResponse({ offer, funnel: { id: matchedFunnel.id, name: matchedFunnel.name } });
+  return corsResponse({
+    offer,
+    funnel: {
+      id: matchedFunnel.id,
+      name: matchedFunnel.name,
+      steps: matchedFunnel.steps.map((s) => ({
+        id: s.id,
+        placement: s.placement,
+        position: s.position,
+        widgetType: s.widget.type,
+        widgetName: s.widget.name,
+        widgetConfig: s.widget.config,
+      })),
+    },
+  });
 };
 
 /**

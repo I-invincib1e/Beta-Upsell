@@ -76,17 +76,16 @@ export function StepCard({
                 : widgetName}
             </Text>
           </InlineStack>
-          <Button
-            variant="plain"
-            tone="critical"
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
-            size="slim"
-          >
-            ✕
-          </Button>
+          <div onClick={(e) => e.stopPropagation()} style={{ display: "inline" }}>
+            <Button
+              variant="plain"
+              tone="critical"
+              onClick={() => onRemove()}
+              size="slim"
+            >
+              ✕
+            </Button>
+          </div>
         </InlineStack>
         <Badge>
           {widgetType.replace(/_/g, " ")}

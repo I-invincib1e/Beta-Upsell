@@ -18,13 +18,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { billing } = await authenticate.admin(request);
 
   // Check for ALL known plan names (Growth, FunnelX Pro, and legacy Pro Plan)
+  // Legacy "Pro Plan" is not in the billing config but still exists as an active
+  // subscription for grandfathered merchants. Shopify's billing.check() accepts it.
+  const plansToCheck: string[] = [
+    SHOPIFY_PLAN_NAMES.GROWTH,
+    SHOPIFY_PLAN_NAMES.PRO,
+    SHOPIFY_PLAN_NAMES.LEGACY_PRO,
+  ];
   const billingCheck = await billing.check({
-    // @ts-ignore — Shopify types don't support array of plan names cleanly
-    plans: [
-      SHOPIFY_PLAN_NAMES.GROWTH,
-      SHOPIFY_PLAN_NAMES.PRO,
-      SHOPIFY_PLAN_NAMES.LEGACY_PRO,
-    ],
+    plans: plansToCheck as any,
     isTest: true,
   });
 

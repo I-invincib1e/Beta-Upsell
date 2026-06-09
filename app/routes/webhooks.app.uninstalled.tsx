@@ -13,5 +13,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await db.session.deleteMany({ where: { shop } });
   }
 
+  // Invalidate the store's access token so stale data isn't used if the
+  // merchant reinstalls. Full data cleanup happens via SHOP_REDACT (48h later).
+  try {
+    const store = await db.store.findUnique({ where: { shopDomain: shop } });
+    if (store) {
+      await db.store.update({
+        where: { id: store.id },
+        data: { accessToken: null },
+      });
+    }
+  } catch (err) {
+    // Store may not exist — that's fine
+    console.warn("Could not invalidate store token on uninstall:", err);
+  }
+
   return new Response();
 };

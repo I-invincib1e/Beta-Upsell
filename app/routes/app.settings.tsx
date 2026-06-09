@@ -1,5 +1,5 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useSubmit, useNavigation, useNavigate, useRouteLoaderData } from "@remix-run/react";
+import { useLoaderData, useSubmit, useNavigation, useNavigate, useRouteLoaderData, useActionData } from "@remix-run/react";
 import { Page, Layout, Card, BlockStack, Text, TextField, Button, Banner, InlineStack, Badge } from "@shopify/polaris";
 import { useState, useCallback } from "react";
 import { authenticate } from "../shopify.server";
@@ -115,8 +115,8 @@ export default function Settings() {
     
     submit(formData, { method: "post" });
   }, [primaryColor, widgetTitle, acceptButtonText, declineButtonText, submit]);
-
-  const isSuccess = navigation.state === "idle" && navigation.formMethod === "POST";
+  const actionResult = useActionData<typeof action>();
+  const isSuccess = actionResult?.success === true;
 
   return (
     <Page title="Widget Settings">

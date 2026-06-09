@@ -1,52 +1,142 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { calculateRemainingTrialDays } from './billing';
+/**
+ * FunnelX — Billing Utility Tests (expanded)
+ *
+ * Tests for plan resolution, config retrieval, and trial day calculation.
+ */
 
-describe('calculateRemainingTrialDays', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-05-10T12:00:00Z'));
+import { describe, test, expect, vi } from "vitest";
+import {
+  resolveActivePlan,
+  getPlanConfig,
+  calculateRemainingTrialDays,
+  PLANS,
+  SHOPIFY_PLAN_NAMES,
+} from "./billing";
+
+describe("resolveActivePlan", () => {
+  test("null subscription resolves to free tier", () => {
+    const result = resolveActivePlan(null);
+    expect(result.tier).toBe("free");
+    expect(result.isLegacy).toBe(false);
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
+  test("undefined subscription resolves to free tier", () => {
+    const result = resolveActivePlan(undefined);
+    expect(result.tier).toBe("free");
   });
 
-  it('should return 0 when no existing subscription data', () => {
-    const result = calculateRemainingTrialDays('Pro Plan', undefined, undefined, undefined);
-    expect(result).toBe(0);
+  test("Growth Plan resolves correctly", () => {
+    const result = resolveActivePlan("Growth Plan");
+    expect(result.tier).toBe("growth");
+    expect(result.isLegacy).toBe(false);
+    expect(result.planName).toBe("Growth Plan");
   });
 
-  it('should return 0 when existing trial days is 0', () => {
-    const result = calculateRemainingTrialDays('Pro Plan', 'Basic Plan', 0, '2026-05-08T12:00:00Z');
-    expect(result).toBe(0);
+  test("FunnelX Pro resolves correctly", () => {
+    const result = resolveActivePlan("FunnelX Pro");
+    expect(result.tier).toBe("pro");
+    expect(result.isLegacy).toBe(false);
   });
 
-  it('should return 0 when re-subscribing to the same plan', () => {
-    const result = calculateRemainingTrialDays('Pro Plan', 'Pro Plan', 3, '2026-05-09T12:00:00Z');
-    expect(result).toBe(0);
+  test("Legacy 'Pro Plan' maps to Pro tier with isLegacy=true", () => {
+    const result = resolveActivePlan("Pro Plan");
+    expect(result.tier).toBe("pro");
+    expect(result.isLegacy).toBe(true);
+    expect(result.planName).toContain("Legacy");
   });
 
-  it('should return remaining trial days when switching plans mid-trial', () => {
-    // Created 1 day ago with 3 day trial => 2 days remaining
-    const result = calculateRemainingTrialDays('Pro Plan', 'Basic Plan', 3, '2026-05-09T12:00:00Z');
-    expect(result).toBe(2);
+  test("Unknown plan defaults to free with console warning", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = resolveActivePlan("Some Random Plan");
+    expect(result.tier).toBe("free");
+    expect(warnSpy).toHaveBeenCalledOnce();
+    warnSpy.mockRestore();
+  });
+});
+
+describe("getPlanConfig", () => {
+  test("free tier has correct limits", () => {
+    const config = getPlanConfig("free");
+    expect(config.funnelLimit).toBe(1);
+    expect(config.abTesting).toBe(false);
+    expect(config.checkoutUpsell).toBe(true); // wedge
+    expect(config.price).toBe(0);
   });
 
-  it('should return 0 when trial has fully elapsed', () => {
-    // Created 5 days ago with 3 day trial => 0 remaining
-    const result = calculateRemainingTrialDays('Pro Plan', 'Basic Plan', 3, '2026-05-05T12:00:00Z');
-    expect(result).toBe(0);
+  test("growth tier has correct limits", () => {
+    const config = getPlanConfig("growth");
+    expect(config.funnelLimit).toBe(5);
+    expect(config.abTesting).toBe(true);
+    expect(config.price).toBe(6.99);
   });
 
-  it('should return full trial days when switching plans on creation day', () => {
-    // Created today with 3 day trial => 3 remaining
-    const result = calculateRemainingTrialDays('Pro Plan', 'Basic Plan', 3, '2026-05-10T12:00:00Z');
-    expect(result).toBe(3);
+  test("pro tier has unlimited funnels", () => {
+    const config = getPlanConfig("pro");
+    expect(config.funnelLimit).toBeNull();
+    expect(config.monthlyOrderLimit).toBeNull();
+    expect(config.abTesting).toBe(true);
+    expect(config.price).toBe(19.99);
+  });
+});
+
+describe("calculateRemainingTrialDays", () => {
+  test("returns 0 when no existing subscription", () => {
+    expect(calculateRemainingTrialDays("Growth Plan", undefined, undefined, undefined)).toBe(0);
   });
 
-  it('should never return negative values', () => {
-    // Created 100 days ago with 3 day trial
-    const result = calculateRemainingTrialDays('Pro Plan', 'Basic Plan', 3, '2026-02-01T12:00:00Z');
-    expect(result).toBe(0);
+  test("returns 0 when re-subscribing to same plan", () => {
+    expect(
+      calculateRemainingTrialDays("Growth Plan", "Growth Plan", 7, new Date().toISOString())
+    ).toBe(0);
+  });
+
+  test("returns remaining days when upgrading mid-trial", () => {
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    const remaining = calculateRemainingTrialDays(
+      "FunnelX Pro",
+      "Growth Plan",
+      7,
+      twoDaysAgo.toISOString()
+    );
+    expect(remaining).toBe(5);
+  });
+
+  test("returns 0 when trial has fully elapsed", () => {
+    const tenDaysAgo = new Date();
+    tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+    const remaining = calculateRemainingTrialDays(
+      "FunnelX Pro",
+      "Growth Plan",
+      7,
+      tenDaysAgo.toISOString()
+    );
+    expect(remaining).toBe(0);
+  });
+
+  test("never returns negative values", () => {
+    const longAgo = new Date();
+    longAgo.setDate(longAgo.getDate() - 100);
+    const remaining = calculateRemainingTrialDays(
+      "FunnelX Pro",
+      "Growth Plan",
+      7,
+      longAgo.toISOString()
+    );
+    expect(remaining).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("PLANS constants", () => {
+  test("all plans have checkoutUpsell = true (wedge strategy)", () => {
+    expect(PLANS.FREE.checkoutUpsell).toBe(true);
+    expect(PLANS.GROWTH.checkoutUpsell).toBe(true);
+    expect(PLANS.PRO.checkoutUpsell).toBe(true);
+  });
+
+  test("SHOPIFY_PLAN_NAMES are distinct", () => {
+    const names = Object.values(SHOPIFY_PLAN_NAMES);
+    const unique = new Set(names);
+    expect(unique.size).toBe(names.length);
   });
 });

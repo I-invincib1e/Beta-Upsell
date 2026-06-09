@@ -165,7 +165,7 @@ model OfferEvent {
 model AnalyticsDaily {
   id                   String   @id @default(uuid())
   storeId              String
-  offerId              String   // Legacy: links to Offer. Will be nullable in Sprint 3.
+  offerId              String?  // Legacy: links to Offer. Null for funnel-only events.
   date                 DateTime @db.Date
   impressions          Int      @default(0)
   accepts              Int      @default(0)
@@ -181,8 +181,8 @@ model AnalyticsDaily {
   variantKey           String?  // "A" | "B" for A/B tracking
 
   store                Store    @relation(fields: [storeId], references: [id])
-  offer                Offer    @relation(fields: [offerId], references: [id])
+  offer                Offer?   @relation(fields: [offerId], references: [id])
 
-  @@unique([storeId, offerId, date])
+  @@unique([storeId, offerId, funnelId, date, variantKey])
   @@index([storeId, date, funnelId])
 }

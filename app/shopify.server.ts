@@ -24,10 +24,6 @@ const shopify = shopifyApp({
       deliveryMethod: DeliveryMethod.Http,
       callbackUrl: "/webhooks/app/uninstalled",
     },
-    ORDERS_CREATE: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/orders/create",
-    },
     CUSTOMERS_DATA_REQUEST: {
       deliveryMethod: DeliveryMethod.Http,
       callbackUrl: "/webhooks/gdpr",
@@ -39,26 +35,6 @@ const shopify = shopifyApp({
     SHOP_REDACT: {
       deliveryMethod: DeliveryMethod.Http,
       callbackUrl: "/webhooks/gdpr",
-    },
-    ORDERS_UPDATED: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/orders/updated",
-    },
-    SHOP_UPDATE: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/shop/update",
-    },
-    PRODUCTS_CREATE: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/products/create",
-    },
-    PRODUCTS_UPDATE: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/products/update",
-    },
-    CUSTOMERS_CREATE: {
-      deliveryMethod: DeliveryMethod.Http,
-      callbackUrl: "/webhooks/customers/create",
     },
   },
   billing: {

@@ -71,7 +71,7 @@ export function PlacementLane({
                 </Text>
               </InlineStack>
               <Badge tone={steps.length > 0 ? "success" : "new"}>
-                {steps.length}
+                {`${steps.length}`}
               </Badge>
             </InlineStack>
 

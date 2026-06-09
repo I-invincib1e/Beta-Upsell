@@ -31,7 +31,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { session, billing } = await authenticate.admin(request);
   const formData = await request.formData();
 
   const name = formData.get("name") as string;
@@ -45,9 +45,22 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const store = await getOrCreateStore(session.shop, session.accessToken);
 
-  // Check funnel limit
-  const rootData = { activePlan: null } as any; // Will be resolved from billing
+  // Server-side plan limit enforcement
+  const plansToCheck: string[] = ["Growth Plan", "FunnelX Pro", "Pro Plan"];
+  const billingCheck = await billing.check({ plans: plansToCheck as any, isTest: true });
+  const subscriptionName = billingCheck.hasActivePayment
+    ? billingCheck.appSubscriptions[0].name
+    : null;
+  const { tier } = resolveActivePlan(subscriptionName);
+  const planConfig = getPlanConfig(tier);
   const activeFunnelCount = await getActiveFunnelCount(store.id);
+
+  if (planConfig.funnelLimit !== null && activeFunnelCount >= planConfig.funnelLimit) {
+    return json(
+      { error: `You've reached the ${planConfig.funnelLimit}-funnel limit on your ${planConfig.name}. Upgrade to create more.` },
+      { status: 403 }
+    );
+  }
 
   try {
     // Create the funnel
@@ -177,10 +190,22 @@ export default function NewFunnel() {
                 <Select
                   label="Widget Type"
                   options={[
+                    // Core (Free)
                     { label: "Product Upsell — recommend a single product", value: "product_upsell" },
                     { label: "Cross-Sell — suggest complementary products", value: "cross_sell" },
                     { label: "Discount Timer — countdown with auto-apply code", value: "discount_timer" },
                     { label: "Order Bump — checkbox add-on at checkout", value: "order_bump" },
+                    // Depth (Growth)
+                    { label: "📦 Bundle Offer — buy X+Y together [Growth]", value: "bundle_offer" },
+                    { label: "⭐ Review Request — post-purchase reviews [Growth]", value: "review_request" },
+                    { label: "📱 Social Share — share for discount [Growth]", value: "social_share" },
+                    { label: "📋 Survey — 1-question feedback [Growth]", value: "survey" },
+                    { label: "🚚 Free Shipping Bar — progress bar [Growth]", value: "free_shipping_bar" },
+                    // Power (Pro)
+                    { label: "💎 Loyalty Points — Smile.io compatible [Pro]", value: "loyalty_points" },
+                    { label: "🔄 Reorder Upsell — buy again for repeats [Pro]", value: "reorder_upsell" },
+                    { label: "🗂️ Related Collection — collection recs [Pro]", value: "related_collection" },
+                    { label: "🎂 Birthday Capture — CRM birthday [Pro]", value: "birthday_capture" },
                   ]}
                   value={widgetType}
                   onChange={(val) => setWidgetType(val as WidgetType)}

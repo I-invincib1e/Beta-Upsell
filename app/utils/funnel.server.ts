@@ -317,6 +317,12 @@ export async function getOrCreateStore(shopDomain: string, accessToken?: string)
         accessToken: accessToken ?? null,
       },
     });
+  } else if (accessToken && store.accessToken !== accessToken) {
+    // Refresh stale access token (Shopify rotates tokens on re-auth)
+    store = await prisma.store.update({
+      where: { id: store.id },
+      data: { accessToken },
+    });
   }
 
   return store;
