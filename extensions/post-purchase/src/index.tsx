@@ -22,7 +22,13 @@ extend("Checkout::PostPurchase::ShouldRender", async ({ inputData, storage }) =>
   
   try {
     const productIds = inputData.initialPurchase.lineItems.map((item: any) => item.product.id).join(",");
-    const response = await fetch(`${APP_URL}/api/offers?shop=${shopDomain}&placement=post_purchase&productIds=${encodeURIComponent(productIds)}`);
+    // Try new FunnelX API first, fall back to legacy
+    let response;
+    try {
+      response = await fetch(`${APP_URL}/api/funnel-data?shop=${shopDomain}&placement=post_purchase&productIds=${encodeURIComponent(productIds)}`);
+    } catch {
+      response = await fetch(`${APP_URL}/api/offers?shop=${shopDomain}&placement=post_purchase&productIds=${encodeURIComponent(productIds)}`);
+    }
     if (!response.ok) throw new Error("Failed to fetch offer");
     
     const data = await response.json();
@@ -151,7 +157,7 @@ export function App({ extensionPoint, storage }) {
 
   return (
     <BlockStack spacing="loose">
-      <CalloutBanner title="Special One-Time Offer">
+      <CalloutBanner title="Special One-Time Offer — Just For You!">
         Please review the exclusive offers below.
       </CalloutBanner>
       

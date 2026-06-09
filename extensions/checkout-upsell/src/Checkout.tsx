@@ -33,6 +33,8 @@ function Extension() {
   // Construct proxy URL or fallback to the app URL
   // We'll use the Shopify App Proxy to hit our backend securely. If proxy isn't set up, we could use an absolute URL.
   const appUrl = `https://${shopDomain}/apps/beta-upsell/api`; 
+  // New FunnelX API — falls back to legacy offers if no funnels exist
+  const funnelApiUrl = `https://${shopDomain}/apps/beta-upsell/api`;
 
   useEffect(() => {
     // Check if the cart already has an item with our offer ID property to avoid showing it if already added
@@ -48,7 +50,13 @@ function Extension() {
     async function fetchOffer() {
       try {
         const productIds = cartLines.map(line => line.merchandise.product?.id || '').filter(Boolean).join(',');
-        const res = await fetch(`${appUrl}/offers?shop=${shopDomain}&placement=checkout&productIds=${encodeURIComponent(productIds)}`);
+        // Try new funnel-data API first, fall back to legacy offers
+        let res;
+        try {
+          res = await fetch(`${funnelApiUrl}/funnel-data?shop=${shopDomain}&placement=checkout&productIds=${encodeURIComponent(productIds)}`);
+        } catch {
+          res = await fetch(`${appUrl}/offers?shop=${shopDomain}&placement=checkout&productIds=${encodeURIComponent(productIds)}`);
+        }
         const data = await res.json();
         
         if (data && data.offer && data.offer.upsellProducts) {

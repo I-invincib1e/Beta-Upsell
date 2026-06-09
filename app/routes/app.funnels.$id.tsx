@@ -1,26 +1,31 @@
-import { json, LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useNavigate } from "@remix-run/react";
+import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
+import { useLoaderData, useNavigate, useSubmit, useNavigation, useActionData } from "@remix-run/react";
 import {
   Page,
   Layout,
-  Card,
-  BlockStack,
-  Text,
-  Badge,
-  InlineStack,
   Banner,
-  SkeletonPage,
-  SkeletonBodyText,
-  SkeletonDisplayText,
-  Button,
-  IndexTable,
+  Text,
 } from "@shopify/polaris";
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
-import { getFunnel, updateFunnel, deleteFunnel } from "../utils/funnel.server";
+import {
+  getFunnel,
+  updateFunnel,
+  createWidget,
+  addStepToFunnel,
+  removeStepFromFunnel,
+  reorderSteps,
+  updateStep,
+} from "../utils/funnel.server";
+import { getOrCreateStore } from "../utils/funnel.server";
+import { getDefaultConfig } from "../types/widgets";
+import type { WidgetType } from "../types/widgets";
+import { FunnelCanvas } from "../components/FunnelCanvas";
+import { MobilePreview } from "../components/MobilePreview";
+import { useState } from "react";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   const funnelId = params.id;
 
   if (!funnelId) {
@@ -33,12 +38,99 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
     return json({ funnel: null, error: "Funnel not found" }, { status: 404 });
   }
 
-  return json({ funnel, error: null });
+  return json({ funnel, error: null, shop: session.shop });
+};
+
+export const action = async ({ request, params }: ActionFunctionArgs) => {
+  const { session } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const intent = formData.get("intent") as string;
+  const funnelId = params.id as string;
+
+  try {
+    switch (intent) {
+      case "add_step": {
+        const placement = formData.get("placement") as string;
+        const widgetType = formData.get("widgetType") as WidgetType;
+        const store = await getOrCreateStore(session.shop, session.accessToken);
+
+        // Create a new widget with default config
+        const defaultConfig = getDefaultConfig(widgetType);
+        const widget = await createWidget(store.id, {
+          type: widgetType,
+          name: `${widgetType.replace(/_/g, " ")} widget`,
+          config: defaultConfig,
+        });
+
+        // Count existing steps to set position
+        const funnel = await getFunnel(funnelId);
+        const stepsInPlacement = (funnel?.steps || []).filter(
+          (s) => s.placement === placement
+        );
+
+        await addStepToFunnel({
+          funnelId,
+          widgetId: widget.id,
+          placement,
+          position: stepsInPlacement.length,
+        });
+
+        return json({ success: true, action: "add_step" });
+      }
+
+      case "remove_step": {
+        const stepId = formData.get("stepId") as string;
+        await removeStepFromFunnel(stepId);
+        return json({ success: true, action: "remove_step" });
+      }
+
+      case "reorder_steps": {
+        const stepIds = JSON.parse(formData.get("stepIds") as string);
+        await reorderSteps(funnelId, stepIds);
+        return json({ success: true, action: "reorder_steps" });
+      }
+
+      case "update_step_config": {
+        const stepId = formData.get("stepId") as string;
+        const config = JSON.parse(formData.get("config") as string);
+        await updateStep(stepId, { config });
+        return json({ success: true, action: "update_step_config" });
+      }
+
+      case "update_status": {
+        const status = formData.get("status") as string;
+        await updateFunnel(funnelId, { status });
+        return json({ success: true, action: "update_status" });
+      }
+
+      case "update_funnel": {
+        const name = formData.get("name") as string | null;
+        const triggerType = formData.get("triggerType") as string | null;
+        const data: any = {};
+        if (name) data.name = name;
+        if (triggerType) data.triggerType = triggerType;
+        await updateFunnel(funnelId, data);
+        return json({ success: true, action: "update_funnel" });
+      }
+
+      default:
+        return json({ error: `Unknown intent: ${intent}` }, { status: 400 });
+    }
+  } catch (error) {
+    console.error(`Action error (${intent}):`, error);
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return json({ error: message }, { status: 500 });
+  }
 };
 
 export default function FunnelDetail() {
   const { funnel, error } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
+  const submit = useSubmit();
+  const navigation = useNavigation();
+  const actionData = useActionData<any>();
+  const [previewStep, setPreviewStep] = useState<any>(null);
+  const isSubmitting = navigation.state === "submitting";
 
   if (error || !funnel) {
     return (
@@ -46,147 +138,116 @@ export default function FunnelDetail() {
         backAction={{ content: "Funnels", onAction: () => navigate("/app/funnels") }}
         title="Funnel Not Found"
       >
-        <Layout>
-          <Layout.Section>
-            <Banner title="Funnel not found" tone="critical">
-              <p>{error || "This funnel does not exist or has been deleted."}</p>
-            </Banner>
-          </Layout.Section>
-        </Layout>
+        <Banner title="Funnel not found" tone="critical">
+          <p>{error || "This funnel does not exist or has been deleted."}</p>
+        </Banner>
       </Page>
     );
   }
 
-  const statusTone = (status: string) => {
-    switch (status) {
-      case "active": return "success" as const;
-      case "paused": return "warning" as const;
-      default: return "info" as const;
+  const handleAddStep = (placement: string, widgetType: WidgetType) => {
+    const formData = new FormData();
+    formData.append("intent", "add_step");
+    formData.append("placement", placement);
+    formData.append("widgetType", widgetType);
+    submit(formData, { method: "post" });
+  };
+
+  const handleRemoveStep = (stepId: string) => {
+    if (!confirm("Remove this step from the funnel?")) return;
+    const formData = new FormData();
+    formData.append("intent", "remove_step");
+    formData.append("stepId", stepId);
+    submit(formData, { method: "post" });
+  };
+
+  const handleReorderSteps = (stepIds: string[]) => {
+    const formData = new FormData();
+    formData.append("intent", "reorder_steps");
+    formData.append("stepIds", JSON.stringify(stepIds));
+    submit(formData, { method: "post" });
+  };
+
+  const handleUpdateStepConfig = (stepId: string, config: any) => {
+    const formData = new FormData();
+    formData.append("intent", "update_step_config");
+    formData.append("stepId", stepId);
+    formData.append("config", JSON.stringify(config));
+    submit(formData, { method: "post" });
+
+    // Update preview
+    const step = funnel.steps.find((s: any) => s.id === stepId);
+    if (step) {
+      setPreviewStep({ ...step, config });
     }
   };
+
+  const handleStatusChange = (status: string) => {
+    const formData = new FormData();
+    formData.append("intent", "update_status");
+    formData.append("status", status);
+    submit(formData, { method: "post" });
+  };
+
+  // Transform steps for FunnelCanvas
+  const canvasSteps = (funnel.steps || []).map((step: any) => ({
+    id: step.id,
+    placement: step.placement,
+    position: step.position,
+    widget: {
+      id: step.widget?.id || "",
+      type: step.widget?.type || "unknown",
+      name: step.widget?.name || "Untitled",
+      config: step.widget?.config || {},
+    },
+    config: step.config,
+  }));
 
   return (
     <Page
       backAction={{ content: "Funnels", onAction: () => navigate("/app/funnels") }}
       title={funnel.name}
-      titleMetadata={
-        <Badge tone={statusTone(funnel.status)}>
-          {funnel.status.charAt(0).toUpperCase() + funnel.status.slice(1)}
-        </Badge>
-      }
     >
       <TitleBar title={funnel.name} />
 
-      <Layout>
-        {/* Funnel Canvas Placeholder — Sprint 2 */}
-        <Layout.Section>
-          <Card>
-            <BlockStack gap="400">
-              <InlineStack align="space-between" blockAlign="center">
-                <Text as="h2" variant="headingMd">Funnel Canvas</Text>
-                <Badge tone="attention">Coming in Sprint 2</Badge>
-              </InlineStack>
-              <Banner tone="info">
-                <p>
-                  The visual funnel canvas with drag-and-drop step management is
-                  being built in Sprint 2. For now, you can view your funnel
-                  steps below.
-                </p>
-              </Banner>
-            </BlockStack>
-          </Card>
-        </Layout.Section>
+      {actionData?.error && (
+        <div style={{ marginBottom: "16px" }}>
+          <Banner title="Error" tone="critical">
+            <p>{actionData.error}</p>
+          </Banner>
+        </div>
+      )}
 
-        {/* Funnel Steps */}
-        <Layout.Section>
-          <Card padding="0">
-            <BlockStack gap="0">
-              <div style={{ padding: "16px" }}>
-                <InlineStack align="space-between" blockAlign="center">
-                  <Text as="h2" variant="headingMd">
-                    Steps ({funnel.steps.length})
-                  </Text>
-                </InlineStack>
-              </div>
-              {funnel.steps.length === 0 ? (
-                <div style={{ padding: "16px", textAlign: "center" }}>
-                  <Text as="p" tone="subdued">
-                    No steps yet. Use the canvas (Sprint 2) to add widgets to this funnel.
-                  </Text>
-                </div>
-              ) : (
-                <IndexTable
-                  resourceName={{ singular: "step", plural: "steps" }}
-                  itemCount={funnel.steps.length}
-                  headings={[
-                    { title: "Position" },
-                    { title: "Widget" },
-                    { title: "Type" },
-                    { title: "Placement" },
-                  ]}
-                  selectable={false}
-                >
-                  {funnel.steps.map((step: any, index: number) => (
-                    <IndexTable.Row id={step.id} key={step.id} position={index}>
-                      <IndexTable.Cell>
-                        <Text variant="bodyMd" as="span">#{step.position + 1}</Text>
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        <Text variant="bodyMd" fontWeight="bold" as="span">
-                          {step.widget?.name || "Unnamed Widget"}
-                        </Text>
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        <Badge>
-                          {(step.widget?.type || "unknown").replace(/_/g, " ")}
-                        </Badge>
-                      </IndexTable.Cell>
-                      <IndexTable.Cell>
-                        <Badge tone="info">
-                          {step.placement.replace(/_/g, " ")}
-                        </Badge>
-                      </IndexTable.Cell>
-                    </IndexTable.Row>
-                  ))}
-                </IndexTable>
-              )}
-            </BlockStack>
-          </Card>
-        </Layout.Section>
+      <div style={{ display: "flex", gap: "16px" }}>
+        {/* Canvas — takes most of the space */}
+        <div style={{ flex: 1 }}>
+          <FunnelCanvas
+            funnelId={funnel.id}
+            funnelName={funnel.name}
+            funnelStatus={funnel.status}
+            steps={canvasSteps}
+            onAddStep={handleAddStep}
+            onRemoveStep={handleRemoveStep}
+            onReorderSteps={handleReorderSteps}
+            onUpdateStepConfig={handleUpdateStepConfig}
+            onStatusChange={handleStatusChange}
+          />
+        </div>
 
-        {/* Funnel Details */}
-        <Layout.Section variant="oneThird">
-          <Card>
-            <BlockStack gap="400">
-              <Text as="h2" variant="headingMd">Details</Text>
-              <BlockStack gap="200">
-                <InlineStack gap="200">
-                  <Text as="span" variant="bodySm" tone="subdued">Trigger:</Text>
-                  <Text as="span" variant="bodySm">{funnel.triggerType.replace(/_/g, " ")}</Text>
-                </InlineStack>
-                <InlineStack gap="200">
-                  <Text as="span" variant="bodySm" tone="subdued">Created:</Text>
-                  <Text as="span" variant="bodySm">
-                    {new Date(funnel.createdAt).toLocaleDateString()}
-                  </Text>
-                </InlineStack>
-                <InlineStack gap="200">
-                  <Text as="span" variant="bodySm" tone="subdued">Updated:</Text>
-                  <Text as="span" variant="bodySm">
-                    {new Date(funnel.updatedAt).toLocaleDateString()}
-                  </Text>
-                </InlineStack>
-                {funnel.abTests && funnel.abTests.length > 0 && (
-                  <InlineStack gap="200">
-                    <Text as="span" variant="bodySm" tone="subdued">A/B Tests:</Text>
-                    <Badge tone="attention">{funnel.abTests.length} active</Badge>
-                  </InlineStack>
-                )}
-              </BlockStack>
-            </BlockStack>
-          </Card>
-        </Layout.Section>
-      </Layout>
+        {/* Live Preview — side panel */}
+        {previewStep && (
+          <div style={{ width: "420px", flexShrink: 0 }}>
+            <MobilePreview
+              widgetType={previewStep.widget?.type || "product_upsell"}
+              widgetConfig={{
+                ...(previewStep.widget?.config || {}),
+                ...(previewStep.config || {}),
+              }}
+              placement={previewStep.placement}
+            />
+          </div>
+        )}
+      </div>
     </Page>
   );
 }
