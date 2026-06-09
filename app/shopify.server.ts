@@ -62,15 +62,37 @@ const shopify = shopifyApp({
     },
   },
   billing: {
+    // ============================================================
+    // FunnelX Billing Plans
+    //
+    // IMPORTANT: The old "Pro Plan" ($29) is NOT listed here.
+    // Existing subscribers are grandfathered — Shopify keeps their
+    // subscription active even if it's not in this config.
+    // The resolveActivePlan() helper in billing.ts maps legacy
+    // plan names to the correct feature tier.
+    // ============================================================
 
-    "Pro Plan": {
+    "Growth Plan": {
       replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      trialDays: 7,
       lineItems: [
         {
-          amount: 29,
+          amount: 6.99,
           currencyCode: "USD",
           interval: BillingInterval.Every30Days,
-        }
+        },
+      ],
+    },
+
+    "FunnelX Pro": {
+      replacementBehavior: BillingReplacementBehavior.ApplyImmediately,
+      trialDays: 7,
+      lineItems: [
+        {
+          amount: 19.99,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+        },
       ],
     },
   },

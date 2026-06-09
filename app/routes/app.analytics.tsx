@@ -109,7 +109,7 @@ export default function AnalyticsDashboard() {
   if (!kpis) return null;
 
   return (
-    <Page title="Advanced Analytics">
+    <Page title="FunnelX Analytics">
       <Layout>
         <Layout.Section>
           <Grid>
@@ -152,10 +152,10 @@ export default function AnalyticsDashboard() {
               <Card padding="0">
                 <BlockStack gap="400">
                   <div style={{ padding: '16px' }}>
-                    <Text as="h2" variant="headingMd">Best Performing Offers</Text>
+                    <Text as="h2" variant="headingMd">Best Performing Funnels</Text>
                   </div>
                   <IndexTable
-                    resourceName={{ singular: 'offer', plural: 'offers' }}
+                    resourceName={{ singular: 'funnel', plural: 'funnels' }}
                     itemCount={topOffers.length}
                     headings={[
                       { title: 'Offer Name' },
@@ -180,7 +180,7 @@ export default function AnalyticsDashboard() {
                   </IndexTable>
                   {topOffers.length === 0 && (
                      <div style={{ padding: '16px', textAlign: 'center' }}>
-                       <Text as="p" tone="subdued">Not enough data yet. Check back after your first few sales!</Text>
+                       <Text as="p" tone="subdued">Not enough data yet. Create and activate a funnel to start collecting data!</Text>
                      </div>
                   )}
                 </BlockStack>

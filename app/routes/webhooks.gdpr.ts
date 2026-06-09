@@ -19,7 +19,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       // Shopify asks to delete a specific customer's data.
       console.log("GDPR: Customer redaction requested", payload);
       if (payload.customer?.id) {
-        // Redact customerId from OfferEvents
+        // Redact customerId from OfferEvents (legacy)
         await prisma.offerEvent.updateMany({
           where: { customerId: String(payload.customer.id) },
           data: { customerId: null },
@@ -34,10 +34,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         // Find store
         const store = await prisma.store.findUnique({ where: { shopDomain } });
         if (store) {
-          // Manually cascade delete to avoid foreign key constraint errors
+          // Delete new models first (FunnelStep cascades from Funnel, AbTest cascades from Funnel)
+          // But Widget doesn't cascade from Store automatically if steps reference it,
+          // so we delete steps first, then widgets.
+          const funnels = await prisma.funnel.findMany({ where: { storeId: store.id }, select: { id: true } });
+          const funnelIds = funnels.map(f => f.id);
+
+          // Delete AbTests (cascades from Funnel, but be explicit)
+          await prisma.abTest.deleteMany({ where: { funnelId: { in: funnelIds } } });
+
+          // Delete FunnelSteps (cascades from Funnel, but be explicit)
+          await prisma.funnelStep.deleteMany({ where: { funnelId: { in: funnelIds } } });
+
+          // Delete Funnels
+          await prisma.funnel.deleteMany({ where: { storeId: store.id } });
+
+          // Delete Widgets
+          await prisma.widget.deleteMany({ where: { storeId: store.id } });
+
+          // Delete legacy models
           await prisma.offerEvent.deleteMany({ where: { storeId: store.id } });
           await prisma.analyticsDaily.deleteMany({ where: { storeId: store.id } });
           await prisma.offer.deleteMany({ where: { storeId: store.id } });
+
+          // Finally delete the store
           await prisma.store.delete({ where: { id: store.id } });
         }
       }

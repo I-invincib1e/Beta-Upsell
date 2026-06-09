@@ -1,7 +1,8 @@
-api_version = "2024-01"
+api_version = "2026-04"
 
 [[extensions]]
-name = "checkout-upsell"
+name = "funnelx-checkout-upsell"
+uid = "42a78221-416b-44aa-07ba-7ad811835d0691422ded"
 type = "ui_extension"
 handle = "checkout-upsell"
 

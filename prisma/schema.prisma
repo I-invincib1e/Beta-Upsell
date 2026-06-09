@@ -39,10 +39,87 @@ model Store {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  // Legacy relations (kept for backward compat during Sprint 1)
   offers       Offer[]
   offerEvents  OfferEvent[]
+
+  // New relations
   analytics    AnalyticsDaily[]
+  widgets      Widget[]
+  funnels      Funnel[]
 }
+
+// ============================================================
+// NEW MODELS — FunnelX Rework
+// ============================================================
+
+model Widget {
+  id          String   @id @default(cuid())
+  storeId     String
+  type        String   // "product_upsell" | "cross_sell" | "bundle" | "discount_timer" | "order_bump" | etc.
+  name        String   @default("Untitled Widget")
+  config      Json     // widget-specific settings (product, discount, copy, style)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  store  Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  steps  FunnelStep[]
+
+  @@index([storeId])
+}
+
+model Funnel {
+  id           String   @id @default(cuid())
+  storeId      String
+  name         String
+  status       String   @default("draft") // "draft" | "active" | "paused"
+  triggerType  String   // "product" | "cart_value" | "collection" | "all"
+  triggerValue Json?    // e.g. { productIds: [...] } or { minCartValue: 50 }
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  store    Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  steps    FunnelStep[]
+  abTests  AbTest[]
+
+  @@index([storeId])
+  @@index([storeId, status])
+}
+
+model FunnelStep {
+  id         String   @id @default(cuid())
+  funnelId   String
+  widgetId   String
+  placement  String   // "checkout" | "post_purchase" | "thank_you" | "order_status" | "product_page" | "cart"
+  position   Int      // order in funnel (0-indexed)
+  config     Json?    // step-level overrides on top of widget config
+
+  funnel  Funnel  @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+  widget  Widget  @relation(fields: [widgetId], references: [id])
+
+  @@index([funnelId])
+}
+
+model AbTest {
+  id          String    @id @default(cuid())
+  funnelId    String
+  name        String
+  status      String    @default("running") // "running" | "paused" | "concluded"
+  variantA    Json      // widget config snapshot
+  variantB    Json      // widget config snapshot
+  splitPct    Int       @default(50) // % traffic to variant A
+  startedAt   DateTime  @default(now())
+  concludedAt DateTime?
+
+  funnel  Funnel @relation(fields: [funnelId], references: [id], onDelete: Cascade)
+
+  @@index([funnelId])
+}
+
+// ============================================================
+// LEGACY MODELS — Kept for backward compat during Sprint 1
+// Will be dropped after data migration is complete.
+// ============================================================
 
 model Offer {
   id                String   @id @default(uuid())
@@ -52,7 +129,7 @@ model Offer {
   triggerType       String   @default("SPECIFIC_PRODUCTS") // SPECIFIC_PRODUCTS, SPECIFIC_COLLECTIONS, ALL_PRODUCTS
   triggerProductIds String[] // Array of product or collection IDs
   upsellProductIds  String[] // Array of upsell product IDs
-  conditions        Json     @default("{}") // cart value, customer tag, etc.
+  conditions        Json     @default("{}") // DEAD FIELD — nothing reads it. Kept for migration safety.
   discountType      String   // percentage, fixed_amount
   discountValue     Float
   isActive          Boolean  @default(true)
@@ -81,10 +158,14 @@ model OfferEvent {
   offer                Offer    @relation(fields: [offerId], references: [id])
 }
 
+// ============================================================
+// ANALYTICS — Updated with funnel/step/variant scoping
+// ============================================================
+
 model AnalyticsDaily {
   id                   String   @id @default(uuid())
   storeId              String
-  offerId              String
+  offerId              String   // Legacy: links to Offer. Will be nullable in Sprint 3.
   date                 DateTime @db.Date
   impressions          Int      @default(0)
   accepts              Int      @default(0)
@@ -94,8 +175,14 @@ model AnalyticsDaily {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
+  // New fields for funnel-scoped analytics (nullable for backward compat)
+  funnelId             String?
+  stepId               String?
+  variantKey           String?  // "A" | "B" for A/B tracking
+
   store                Store    @relation(fields: [storeId], references: [id])
   offer                Offer    @relation(fields: [offerId], references: [id])
 
   @@unique([storeId, offerId, date])
+  @@index([storeId, date, funnelId])
 }

@@ -7,16 +7,39 @@ import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 import premiumStyles from "../styles/premium.css?url";
 
 import { authenticate } from "../shopify.server";
+import { resolveActivePlan, SHOPIFY_PLAN_NAMES } from "../utils/billing";
 
 export const links = () => [
   { rel: "stylesheet", href: polarisStyles },
-  { rel: "stylesheet", href: premiumStyles }
+  { rel: "stylesheet", href: premiumStyles },
 ];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { billing } = await authenticate.admin(request);
 
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  // Check for ALL known plan names (Growth, FunnelX Pro, and legacy Pro Plan)
+  const billingCheck = await billing.check({
+    // @ts-ignore — Shopify types don't support array of plan names cleanly
+    plans: [
+      SHOPIFY_PLAN_NAMES.GROWTH,
+      SHOPIFY_PLAN_NAMES.PRO,
+      SHOPIFY_PLAN_NAMES.LEGACY_PRO,
+    ],
+    isTest: true,
+  });
+
+  const subscriptionName = billingCheck.hasActivePayment
+    ? billingCheck.appSubscriptions[0].name
+    : null;
+
+  const { planName, tier, isLegacy } = resolveActivePlan(subscriptionName);
+
+  return {
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    activePlan: planName,
+    planTier: tier,
+    isLegacyPlan: isLegacy,
+  };
 };
 
 export default function App() {
@@ -28,7 +51,7 @@ export default function App() {
         <Link to="/app" rel="home">
           Dashboard
         </Link>
-        <Link to="/app/offers">Offers</Link>
+        <Link to="/app/funnels">Funnels</Link>
         <Link to="/app/analytics">Analytics</Link>
         <Link to="/app/pricing">Pricing</Link>
         <Link to="/app/settings">Settings</Link>

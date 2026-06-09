@@ -1,6 +1,6 @@
 import { json, LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node";
-import { useLoaderData, useSubmit, useNavigation } from "@remix-run/react";
-import { Page, Layout, Card, BlockStack, Text, TextField, Button, Banner } from "@shopify/polaris";
+import { useLoaderData, useSubmit, useNavigation, useNavigate, useRouteLoaderData } from "@remix-run/react";
+import { Page, Layout, Card, BlockStack, Text, TextField, Button, Banner, InlineStack, Badge } from "@shopify/polaris";
 import { useState, useCallback } from "react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
@@ -62,6 +62,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   });
 
   // Sync settings to Shopify Metafields for the liquid widget
+  // IMPORTANT: Keep "beta_upsell" namespace — do NOT rename to "funnelx" in Sprint 1.
+  // Existing merchants have data in this namespace. Migrate in Sprint 6.
   const metafieldsSetMutation = `
     mutation MetafieldsSet($metafields: [MetafieldsSetInput!]!) {
       metafieldsSet(metafields: $metafields) {
@@ -94,6 +96,9 @@ export default function Settings() {
   const { settings } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const navigation = useNavigation();
+  const navigate = useNavigate();
+  const rootData = useRouteLoaderData<{ activePlan: string }>("routes/app");
+  const activePlan = rootData?.activePlan || "Free Plan";
   const isSaving = navigation.state === "submitting";
 
   const [primaryColor, setPrimaryColor] = useState(settings.primaryColor);
@@ -131,7 +136,7 @@ export default function Settings() {
             
             <Card>
               <BlockStack gap="400">
-                <Text as="h2" variant="headingMd">Cart Drawer Customization</Text>
+                <Text as="h2" variant="headingMd">FunnelX Cart Drawer Customization</Text>
                 
                 <TextField
                   label="Widget Title"
@@ -166,6 +171,25 @@ export default function Settings() {
                 <Button variant="primary" onClick={handleSave} loading={isSaving}>
                   Save Settings
                 </Button>
+              </BlockStack>
+            </Card>
+
+            <Card>
+              <BlockStack gap="400">
+                <Text as="h2" variant="headingMd">Plan & Billing</Text>
+                <InlineStack gap="300" blockAlign="center">
+                  <Text as="span" variant="bodyMd">Current Plan:</Text>
+                  <Badge tone={activePlan === "Free Plan" ? "info" : "success"}>{activePlan}</Badge>
+                </InlineStack>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  Upgrade or downgrade your plan at any time — no need to contact support.
+                </Text>
+                <Button onClick={() => navigate("/app/pricing")}>
+                  {activePlan === "Free Plan" ? "View Plans & Upgrade" : "Manage Plan"}
+                </Button>
+                <Text as="p" variant="bodySm" tone="subdued">
+                  FunnelX charges zero revenue share — flat monthly pricing only.
+                </Text>
               </BlockStack>
             </Card>
           </BlockStack>

@@ -1,3 +1,14 @@
-name = "Cart Upsell"
+name = "FunnelX Cart Upsell"
 uid = "27de7a0f-16d2-26c3-ac46-904a094e21ffb93d65db"
 type = "theme"
+
+[[theme.blocks]]
+name = "Cart Drawer Upsell"
+target = "section"
+
+[[theme.blocks]]
+name = "FBT Upsell Block"
+target = "section"
+
+[build]
+include_config_on_deploy = true

@@ -1,7 +1,7 @@
 # This file stores configurations for your Shopify app.
 
 client_id = "71c0d5b7b05db41c52286ce4d0e4f3c0"
-name = "Upsell"
+name = "FunnelX"
 application_url = "https://beta-upsell-production.up.railway.app"
 embedded = true
 
@@ -29,24 +29,16 @@ api_version = "2024-10"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
-  # Webhooks can have filters
-  # Only receive webhooks for product updates with a product price >= 10.00
-  # See: https://shopify.dev/docs/apps/build/webhooks/customize/filters
-  # [[webhooks.subscriptions]]
-  # topics = ["products/update"]
-  # uri = "/webhooks/products/update"
-  # filter = "variants.price:>=10.00"
+  # Mandatory compliance webhooks — required for public apps
+  # Handled by: /app/routes/webhooks.gdpr.ts
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/gdpr"
+  compliance_topics = ["customers/data_request"]
 
-  # Mandatory compliance topic for public apps only
-  # See: https://shopify.dev/docs/apps/build/privacy-law-compliance
-  # [[webhooks.subscriptions]]
-  # uri = "/webhooks/customers/data_request"
-  # compliance_topics = ["customers/data_request"]
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/gdpr"
+  compliance_topics = ["customers/redact"]
 
-  # [[webhooks.subscriptions]]
-  # uri = "/webhooks/customers/redact"
-  # compliance_topics = ["customers/redact"]
-
-  # [[webhooks.subscriptions]]
-  # uri = "/webhooks/shop/redact"
-  # compliance_topics = ["shop/redact"]
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/gdpr"
+  compliance_topics = ["shop/redact"]

@@ -1,4 +1,4 @@
-name = "post-purchase"
+name = "funnelx-post-purchase"
 type = "checkout_post_purchase"
 uid = "270b23c2-605f-4beb-e5d9-4fd2d5988b0899ff9d90"
 
