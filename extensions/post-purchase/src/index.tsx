@@ -34,7 +34,44 @@ extend("Checkout::PostPurchase::ShouldRender", async ({ inputData, storage }) =>
     const data = await response.json();
     
     if (data.offer && data.offer.upsellProducts && data.offer.upsellProducts.length > 0) {
-      await storage.update({ offer: data.offer });
+      let offerData = data.offer;
+      let abVariant = "A";
+      let abTestId = null;
+
+      // --- A/B Test Assignment ---
+      if (data.offer.funnelId) {
+        try {
+          // Use customer ID for deterministic assignment (available in post-purchase)
+          const customerId = inputData.initialPurchase?.customerId
+            || inputData.initialPurchase?.lineItems?.[0]?.product?.id
+            || `anon_${Date.now()}`;
+          
+          const abRes = await fetch(
+            `${APP_URL}/api/abtest-assign?funnelId=${data.offer.funnelId}&customerId=${encodeURIComponent(String(customerId))}`
+          );
+          const abData = await abRes.json();
+
+          if (abData.hasAbTest && abData.config) {
+            abVariant = abData.variant;
+            abTestId = abData.testId;
+            // Apply variant config overrides
+            const vc = abData.config;
+            if (vc.discountType) offerData.discountType = vc.discountType;
+            if (vc.discountValue !== undefined) offerData.discountValue = vc.discountValue;
+            if (vc.heading) offerData.heading = vc.heading;
+            if (vc.acceptButtonText) offerData.acceptButtonText = vc.acceptButtonText;
+            if (vc.description) offerData.description = vc.description;
+          }
+        } catch (abErr) {
+          console.error("A/B test assignment failed:", abErr);
+        }
+      }
+
+      await storage.update({
+        offer: offerData,
+        abVariant,
+        abTestId,
+      });
       return { render: true };
     }
   } catch (err) {
@@ -49,29 +86,34 @@ render("Checkout::PostPurchase::Render", App);
 export function App({ extensionPoint, storage }) {
   const { inputData, calculateChangeset, applyChangeset, done } = useExtensionInput();
   const offer = storage.initialData?.offer;
+  const abVariant = storage.initialData?.abVariant || "A";
+  const abTestId = storage.initialData?.abTestId || null;
   const shopDomain = inputData.shop.domain;
   
   const [isAccepting, setIsAccepting] = useState(false);
   const [isDeclining, setIsDeclining] = useState(false);
   const [errorText, setErrorText] = useState("");
 
-  // Send an impression event when the component mounts
+  // Send an impression event when the component mounts (with A/B variant info)
   React.useEffect(() => {
     if (offer) {
-      fetch(`${APP_URL}/api/events`, {
+      fetch(`${APP_URL}/api/analytics-event`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shop: shopDomain,
           offerId: offer.id,
-          eventType: "shown"
+          funnelId: offer.funnelId || null,
+          stepId: offer.stepId || null,
+          variantKey: abVariant,
+          eventType: "shown",
         })
       }).catch(console.error);
     }
   }, [offer, shopDomain]);
 
   if (!offer) {
-    return null; // Should not happen since ShouldRender guards this
+    return null;
   }
 
   const originalPrice = parseFloat(offer.originalPrice || "0");
@@ -85,12 +127,20 @@ export function App({ extensionPoint, storage }) {
   
   const finalPrice = Math.max(0, originalPrice - discountAmount);
 
+  // Use variant-overridden copy if available
+  const heading = offer.heading || "Add to your order";
+  const acceptButtonText = offer.acceptButtonText || "Add to Order";
+  const description = offer.description || (
+    offer.discountType === 'percentage' 
+      ? `Get ${offer.discountValue}% off instantly when you add these to your order.` 
+      : `Save $${offer.discountValue} instantly when you add these to your order.`
+  );
+
   const handleAccept = async () => {
     setIsAccepting(true);
     setErrorText("");
     
     try {
-      // Create changes for all upsell products
       const changes = offer.upsellProducts.map((product: any) => ({
         type: "add_variant", 
         variantId: Number(product.variantId), 
@@ -102,26 +152,27 @@ export function App({ extensionPoint, storage }) {
         } 
       }));
 
-      // 1. Calculate Changeset
       const changeset = await calculateChangeset({ changes });
 
       if (changeset.errors && changeset.errors.length > 0) {
         throw new Error(changeset.errors[0].message);
       }
 
-      // 2. Apply Changeset (This actually charges the card!)
       const applyResult = await applyChangeset(changeset.calculatedPurchase?.token);
       
       if (applyResult.status === "success") {
-        // 3. Track success in our analytics
-        fetch(`${APP_URL}/api/events`, {
+        // Track acceptance with A/B variant info
+        fetch(`${APP_URL}/api/analytics-event`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             shop: shopDomain,
             offerId: offer.id,
+            funnelId: offer.funnelId || null,
+            stepId: offer.stepId || null,
+            variantKey: abVariant,
             eventType: "accepted",
-            upsellRevenue: finalPrice
+            upsellRevenue: finalPrice,
           })
         }).catch(e => console.error(e));
         
@@ -139,13 +190,16 @@ export function App({ extensionPoint, storage }) {
   const handleDecline = async () => {
     setIsDeclining(true);
     try {
-      await fetch(`${APP_URL}/api/events`, {
+      await fetch(`${APP_URL}/api/analytics-event`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           shop: shopDomain,
           offerId: offer.id,
-          eventType: "declined"
+          funnelId: offer.funnelId || null,
+          stepId: offer.stepId || null,
+          variantKey: abVariant,
+          eventType: "declined",
         })
       });
     } catch (err) {
@@ -172,12 +226,8 @@ export function App({ extensionPoint, storage }) {
         <View>
           <BlockStack spacing="loose">
             <TextContainer>
-              <Heading>Add to your order</Heading>
-              <TextBlock>
-                {offer.discountType === 'percentage' 
-                  ? `Get ${offer.discountValue}% off instantly when you add these to your order.` 
-                  : `Save $${offer.discountValue} instantly when you add these to your order.`}
-              </TextBlock>
+              <Heading>{heading}</Heading>
+              <TextBlock>{description}</TextBlock>
             </TextContainer>
             <BlockStack spacing="loose">
               {offer.upsellProducts.map((product: any) => (
@@ -203,7 +253,7 @@ export function App({ extensionPoint, storage }) {
               loading={isAccepting}
               disabled={isDeclining}
             >
-              Add to Order
+              {acceptButtonText}
             </Button>
             <Button
               onPress={handleDecline}

@@ -109,15 +109,58 @@
     </div>
     
     <script>
-      fetch('/apps/beta-upsell/api/events', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          shop: Shopify.shop,
-          offerId: '{{ matched_offer.id }}',
-          eventType: 'shown'
-        })
-      }).catch(e => console.error(e));
+      (function() {
+        var offerId = '{{ matched_offer.id }}';
+        var funnelId = '{{ matched_offer.funnelId | default: "" }}';
+        var stepId = '{{ matched_offer.stepId | default: "" }}';
+        var variantKey = null;
+
+        function sendEvent(eventType, extraData) {
+          var payload = {
+            shop: Shopify.shop,
+            offerId: offerId,
+            eventType: eventType,
+            funnelId: funnelId || null,
+            stepId: stepId || null,
+            variantKey: variantKey || null
+          };
+          if (extraData) {
+            for (var k in extraData) payload[k] = extraData[k];
+          }
+          fetch('/apps/beta-upsell/api/analytics-event', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          }).catch(function(e) { console.error(e); });
+        }
+
+        // Fetch A/B test variant if this is a funnel-based offer
+        if (funnelId) {
+          var sessionId = 'cart_' + {{ cart.item_count }} + '_' + {{ cart.total_price }};
+          fetch('/apps/beta-upsell/api/abtest-assign?funnelId=' + encodeURIComponent(funnelId) + '&sessionId=' + encodeURIComponent(sessionId))
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+              if (data.hasAbTest) {
+                variantKey = data.variant;
+              }
+              sendEvent('shown');
+            })
+            .catch(function() {
+              sendEvent('shown');
+            });
+        } else {
+          sendEvent('shown');
+        }
+
+        // Listen for add-to-cart from upsell forms
+        document.querySelectorAll('.cart-upsell-widget form').forEach(function(form) {
+          form.addEventListener('submit', function() {
+            sendEvent('accepted', {
+              upsellRevenue: 0 // Revenue tracked server-side via order webhook
+            });
+          });
+        });
+      })();
     </script>
   {% else %}
     <p style="font-size: 13px; color: #666; margin: 0;">No active offers right now.</p>

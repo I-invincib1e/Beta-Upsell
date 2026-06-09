@@ -16,6 +16,7 @@ import {
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getOrCreateStore, deleteFunnel } from "../utils/funnel.server";
+import { AbTestBadge } from "../components/AbTestBadge";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
@@ -29,6 +30,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       steps: {
         include: { widget: true },
         orderBy: { position: "asc" },
+      },
+      abTests: {
+        where: { status: "running" },
+        take: 1,
+        orderBy: { startedAt: "desc" },
       },
       _count: {
         select: { steps: true, abTests: true },
@@ -107,14 +113,23 @@ export default function FunnelsIndex() {
         {funnel._count.steps} step{funnel._count.steps !== 1 ? "s" : ""}
       </IndexTable.Cell>
       <IndexTable.Cell>
+        {funnel.abTests && funnel.abTests.length > 0 ? (
+          <AbTestBadge
+            testName={funnel.abTests[0].name}
+            testStatus={funnel.abTests[0].status}
+          />
+        ) : (
+          <Text as="span" variant="bodySm" tone="subdued">—</Text>
+        )}
+      </IndexTable.Cell>
+      <IndexTable.Cell>
         {funnel.triggerType.replace(/_/g, " ")}
       </IndexTable.Cell>
       <IndexTable.Cell>
         <Button
           tone="critical"
           variant="plain"
-          onClick={(e) => {
-            e.stopPropagation();
+          onClick={() => {
             if (confirm("Are you sure you want to delete this funnel? This cannot be undone.")) {
               const formData = new FormData();
               formData.append("funnelId", funnel.id);
@@ -194,6 +209,7 @@ export default function FunnelsIndex() {
                   { title: "Status" },
                   { title: "Placements" },
                   { title: "Steps" },
+                  { title: "A/B Test" },
                   { title: "Trigger" },
                   { title: "Actions" },
                 ]}

@@ -27,17 +27,15 @@ function Extension() {
   const [adding, setAdding] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [impressionTracked, setImpressionTracked] = useState(false);
+  // A/B test state
+  const [abVariant, setAbVariant] = useState<string | null>(null);
+  const [abTestId, setAbTestId] = useState<string | null>(null);
 
-  // Note: For a production app, the shop domain can be retrieved from shop.myshopifyDomain
   const shopDomain = shop.myshopifyDomain;
-  // Construct proxy URL or fallback to the app URL
-  // We'll use the Shopify App Proxy to hit our backend securely. If proxy isn't set up, we could use an absolute URL.
-  const appUrl = `https://${shopDomain}/apps/beta-upsell/api`; 
-  // New FunnelX API — falls back to legacy offers if no funnels exist
+  const appUrl = `https://${shopDomain}/apps/beta-upsell/api`;
   const funnelApiUrl = `https://${shopDomain}/apps/beta-upsell/api`;
 
   useEffect(() => {
-    // Check if the cart already has an item with our offer ID property to avoid showing it if already added
     const hasUpsellInCart = cartLines.some(line => 
       line.attributes?.some(attr => attr.key === '_upsell_offer_id')
     );
@@ -66,7 +64,39 @@ function Extension() {
           );
           
           if (availableUpsells.length > 0) {
-            setOffer({ ...data.offer, upsellProducts: availableUpsells });
+            const offerData = { ...data.offer, upsellProducts: availableUpsells };
+
+            // --- A/B Test Assignment ---
+            // If this is a funnel-based offer, check for running A/B test
+            if (data.offer.funnelId) {
+              try {
+                // Generate a deterministic session ID from cart contents
+                const sessionId = cartLines.map(l => l.merchandise.id).sort().join('_');
+                const abRes = await fetch(
+                  `${funnelApiUrl}/abtest-assign?funnelId=${data.offer.funnelId}&sessionId=${encodeURIComponent(sessionId)}`
+                );
+                const abData = await abRes.json();
+
+                if (abData.hasAbTest && abData.config) {
+                  setAbVariant(abData.variant);
+                  setAbTestId(abData.testId);
+                  // Apply variant config overrides to the widget config
+                  const variantConfig = abData.config;
+                  if (variantConfig.discountType) offerData.discountType = variantConfig.discountType;
+                  if (variantConfig.discountValue !== undefined) offerData.discountValue = variantConfig.discountValue;
+                  if (variantConfig.heading) offerData.heading = variantConfig.heading;
+                  if (variantConfig.acceptButtonText) offerData.acceptButtonText = variantConfig.acceptButtonText;
+                } else {
+                  // No A/B test — default variant A
+                  setAbVariant('A');
+                }
+              } catch (abErr) {
+                console.error('A/B test assignment failed, using default:', abErr);
+                setAbVariant('A');
+              }
+            }
+
+            setOffer(offerData);
           }
         }
       } catch (err) {
@@ -79,23 +109,31 @@ function Extension() {
     fetchOffer();
   }, [shopDomain, cartLines, appUrl]);
 
+  // Track impression with A/B variant info
   useEffect(() => {
     if (offer && !impressionTracked) {
       setImpressionTracked(true);
-      fetch(`${appUrl}/events`, {
+      fetch(`${appUrl}/analytics-event`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shop: shopDomain,
           offerId: offer.id,
+          funnelId: offer.funnelId || null,
+          stepId: offer.stepId || null,
+          variantKey: abVariant || null,
           eventType: 'shown',
-          device: 'unknown' // Checkout UI extensions don't expose device easily
+          device: 'unknown',
         })
       }).catch(console.error);
     }
-  }, [offer, impressionTracked, appUrl, shopDomain]);
+  }, [offer, impressionTracked, appUrl, shopDomain, abVariant]);
 
   if (loading || !offer) return null;
+
+  // Use variant-overridden heading if available
+  const heading = offer.heading || 'Wait! Complete your order with this special offer';
+  const acceptButtonText = offer.acceptButtonText || 'Add';
 
   async function handleAddOffer(product: any) {
     setAdding(product.id);
@@ -115,14 +153,18 @@ function Extension() {
         setHasError(true);
         setAdding(false);
       } else {
-        fetch(`${appUrl}/events`, {
+        // Track acceptance with A/B variant info
+        fetch(`${appUrl}/analytics-event`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             shop: shopDomain,
             offerId: offer.id,
+            funnelId: offer.funnelId || null,
+            stepId: offer.stepId || null,
+            variantKey: abVariant || null,
             eventType: 'accepted',
-            upsellRevenue: product.originalPrice
+            upsellRevenue: product.originalPrice,
           })
         }).catch(console.error);
         
@@ -144,7 +186,7 @@ function Extension() {
 
   return (
     <BlockStack spacing="loose" padding="tight" border="base" cornerRadius="base">
-      <Text size="base" emphasis="bold">Wait! Complete your order with this special offer</Text>
+      <Text size="base" emphasis="bold">{heading}</Text>
       
       {hasError && (
         <Banner status="critical">
@@ -176,7 +218,7 @@ function Extension() {
             loading={adding === product.id}
             onPress={() => handleAddOffer(product)}
           >
-            Add
+            {acceptButtonText}
           </Button>
         </InlineLayout>
       ))}

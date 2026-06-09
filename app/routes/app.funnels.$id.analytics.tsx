@@ -25,7 +25,9 @@ import {
 import { authenticate } from "../shopify.server";
 import { getFunnelAnalytics } from "../utils/analytics.server";
 import { getFunnel } from "../utils/funnel.server";
+import { getRunningTestForFunnel, getAbTestResults } from "../utils/abtest.server";
 import { DateRangePicker } from "../components/DateRangePicker";
+import { AbTestResults } from "../components/AbTestBadge";
 import { useCallback } from "react";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
@@ -33,12 +35,12 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const funnelId = params.id;
 
   if (!funnelId) {
-    return json({ error: "Missing funnel ID", funnel: null, analytics: null });
+    return json({ error: "Missing funnel ID", funnel: null, analytics: null, rangeLabel: "30 days", abTestResults: null });
   }
 
   const funnel = await getFunnel(funnelId);
   if (!funnel) {
-    return json({ error: "Funnel not found", funnel: null, analytics: null });
+    return json({ error: "Funnel not found", funnel: null, analytics: null, rangeLabel: "30 days", abTestResults: null });
   }
 
   // Parse date range
@@ -62,11 +64,18 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   const analytics = await getFunnelAnalytics(funnelId, dateRange);
 
-  return json({ funnel, analytics, rangeLabel, error: null });
+  // Fetch running A/B test results with statistical significance
+  let abTestResults = null;
+  const runningTest = await getRunningTestForFunnel(funnelId);
+  if (runningTest) {
+    abTestResults = await getAbTestResults(runningTest.id);
+  }
+
+  return json({ funnel, analytics, rangeLabel, error: null, abTestResults });
 };
 
 export default function FunnelAnalytics() {
-  const { funnel, analytics, rangeLabel, error } = useLoaderData<typeof loader>();
+  const { funnel, analytics, rangeLabel, error, abTestResults } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -253,14 +262,25 @@ export default function FunnelAnalytics() {
           </Card>
         </Layout.Section>
 
-        {/* A/B Test Results */}
-        {variantBreakdown.length > 0 && (
+        {/* A/B Test Results — Real Significance Analysis */}
+        {abTestResults && abTestResults.significance && (
+          <Layout.Section>
+            <AbTestResults
+              significance={abTestResults.significance}
+              statsA={abTestResults.statsA}
+              statsB={abTestResults.statsB}
+              testName={abTestResults.test?.name || "A/B Test"}
+            />
+          </Layout.Section>
+        )}
+
+        {/* Legacy variant breakdown (shown if no active A/B test but variant data exists) */}
+        {!abTestResults && variantBreakdown.length > 0 && (
           <Layout.Section>
             <Card>
               <BlockStack gap="400">
                 <InlineStack align="space-between" blockAlign="center">
-                  <Text as="h2" variant="headingMd">A/B Test Results</Text>
-                  <Badge tone="attention">Sprint 4</Badge>
+                  <Text as="h2" variant="headingMd">Variant Breakdown</Text>
                 </InlineStack>
                 <Grid>
                   {variantBreakdown.map((v: any) => (
@@ -269,7 +289,7 @@ export default function FunnelAnalytics() {
                         <BlockStack gap="200">
                           <InlineStack gap="200" blockAlign="center">
                             <Badge tone={v.variant === "A" ? "success" : "info"}>
-                              Variant {v.variant}
+                              {`Variant ${v.variant}`}
                             </Badge>
                           </InlineStack>
                           <Grid>

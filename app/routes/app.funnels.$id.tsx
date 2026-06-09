@@ -22,6 +22,8 @@ import { getDefaultConfig } from "../types/widgets";
 import type { WidgetType } from "../types/widgets";
 import { FunnelCanvas } from "../components/FunnelCanvas";
 import { MobilePreview } from "../components/MobilePreview";
+import { AbTestBadge, AbTestCreator, AbTestResults } from "../components/AbTestBadge";
+import { getRunningTestForFunnel, createAbTest, concludeAbTest, pauseAbTest, resumeAbTest, getAbTestResults } from "../utils/abtest.server";
 import { useState } from "react";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
@@ -29,16 +31,22 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   const funnelId = params.id;
 
   if (!funnelId) {
-    return json({ funnel: null, error: "Missing funnel ID" }, { status: 400 });
+    return json({ funnel: null, error: "Missing funnel ID", shop: null, runningTest: null, abTestResults: null }, { status: 400 });
   }
 
   const funnel = await getFunnel(funnelId);
 
   if (!funnel) {
-    return json({ funnel: null, error: "Funnel not found" }, { status: 404 });
+    return json({ funnel: null, error: "Funnel not found", shop: null, runningTest: null, abTestResults: null }, { status: 404 });
+  }
+  // Get running A/B test if any
+  const runningTest = await getRunningTestForFunnel(funnelId);
+  let abTestResults = null;
+  if (runningTest) {
+    abTestResults = await getAbTestResults(runningTest.id);
   }
 
-  return json({ funnel, error: null, shop: session.shop });
+  return json({ funnel, error: null, shop: session.shop, runningTest, abTestResults });
 };
 
 export const action = async ({ request, params }: ActionFunctionArgs) => {
@@ -113,6 +121,39 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
         return json({ success: true, action: "update_funnel" });
       }
 
+      case "create_abtest": {
+        const testName = formData.get("testName") as string;
+        const variantA = JSON.parse(formData.get("variantA") as string);
+        const variantB = JSON.parse(formData.get("variantB") as string);
+        const splitPct = parseInt(formData.get("splitPct") as string) || 50;
+        await createAbTest({
+          funnelId,
+          name: testName,
+          variantA,
+          variantB,
+          splitPct,
+        });
+        return json({ success: true, action: "create_abtest" });
+      }
+
+      case "conclude_abtest": {
+        const testId = formData.get("testId") as string;
+        await concludeAbTest(testId);
+        return json({ success: true, action: "conclude_abtest" });
+      }
+
+      case "pause_abtest": {
+        const testId = formData.get("testId") as string;
+        await pauseAbTest(testId);
+        return json({ success: true, action: "pause_abtest" });
+      }
+
+      case "resume_abtest": {
+        const testId = formData.get("testId") as string;
+        await resumeAbTest(testId);
+        return json({ success: true, action: "resume_abtest" });
+      }
+
       default:
         return json({ error: `Unknown intent: ${intent}` }, { status: 400 });
     }
@@ -124,12 +165,13 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 };
 
 export default function FunnelDetail() {
-  const { funnel, error } = useLoaderData<typeof loader>();
+  const { funnel, error, runningTest, abTestResults } = useLoaderData<typeof loader>();
   const navigate = useNavigate();
   const submit = useSubmit();
   const navigation = useNavigation();
   const actionData = useActionData<any>();
   const [previewStep, setPreviewStep] = useState<any>(null);
+  const [showAbTestCreator, setShowAbTestCreator] = useState(false);
   const isSubmitting = navigation.state === "submitting";
 
   if (error || !funnel) {
@@ -221,6 +263,42 @@ export default function FunnelDetail() {
       <div style={{ display: "flex", gap: "16px" }}>
         {/* Canvas — takes most of the space */}
         <div style={{ flex: 1 }}>
+          {/* A/B Test Badge */}
+          {runningTest && (
+            <div style={{ marginBottom: "12px" }}>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                <AbTestBadge
+                  testName={runningTest.name}
+                  testStatus={runningTest.status}
+                />
+                <button
+                  onClick={() => {
+                    if (confirm(`Conclude A/B test "${runningTest.name}"?`)) {
+                      const fd = new FormData();
+                      fd.append("intent", "conclude_abtest");
+                      fd.append("testId", runningTest.id);
+                      submit(fd, { method: "post" });
+                    }
+                  }}
+                  style={{ background: "none", border: "1px solid #d1d5db", borderRadius: "4px", padding: "4px 8px", cursor: "pointer", fontSize: "12px" }}
+                >
+                  Conclude Test
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!runningTest && (
+            <div style={{ marginBottom: "12px" }}>
+              <button
+                onClick={() => setShowAbTestCreator(true)}
+                style={{ background: "none", border: "1px solid #6366f1", color: "#6366f1", borderRadius: "6px", padding: "6px 12px", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}
+              >
+                🧪 Create A/B Test
+              </button>
+            </div>
+          )}
+
           <FunnelCanvas
             funnelId={funnel.id}
             funnelName={funnel.name}
@@ -232,6 +310,18 @@ export default function FunnelDetail() {
             onUpdateStepConfig={handleUpdateStepConfig}
             onStatusChange={handleStatusChange}
           />
+
+          {/* A/B Test Results */}
+          {abTestResults && abTestResults.significance && (
+            <div style={{ marginTop: "16px" }}>
+              <AbTestResults
+                significance={abTestResults.significance}
+                statsA={abTestResults.statsA}
+                statsB={abTestResults.statsB}
+                testName={abTestResults.test?.name || "A/B Test"}
+              />
+            </div>
+          )}
         </div>
 
         {/* Live Preview — side panel */}
@@ -248,6 +338,28 @@ export default function FunnelDetail() {
           </div>
         )}
       </div>
+
+      {/* A/B Test Creator Modal */}
+      {showAbTestCreator && (
+        <AbTestCreator
+          funnelId={funnel.id}
+          funnelName={funnel.name}
+          currentConfig={
+            canvasSteps[0]?.widget?.config || {}
+          }
+          onClose={() => setShowAbTestCreator(false)}
+          onSubmit={(data) => {
+            const fd = new FormData();
+            fd.append("intent", "create_abtest");
+            fd.append("testName", data.name);
+            fd.append("variantA", JSON.stringify(data.variantA));
+            fd.append("variantB", JSON.stringify(data.variantB));
+            fd.append("splitPct", String(data.splitPct));
+            submit(fd, { method: "post" });
+            setShowAbTestCreator(false);
+          }}
+        />
+      )}
     </Page>
   );
 }
