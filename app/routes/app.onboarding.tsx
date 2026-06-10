@@ -76,25 +76,58 @@ export default function Onboarding() {
               </BlockStack>
             </Card>
 
-            {/* Step 1: Enable App Embed */}
+            {/* Step 1: Enable App Extensions */}
             <Card>
               <BlockStack gap="400">
                 <InlineStack gap="200" blockAlign="center">
                   <Text as="span" variant="headingLg">🔌</Text>
-                  <Text as="h2" variant="headingMd">Enable App Embed</Text>
+                  <Text as="h2" variant="headingMd">Enable App Extensions</Text>
                 </InlineStack>
                 <Text as="p" variant="bodyMd">
-                  To make your upsells visible to customers, enable the FunnelX
-                  app embed in your Shopify Theme Editor. This takes less than 30
-                  seconds.
+                  To make your upsells visible to customers, you need to enable the app extensions in your Shopify store. Depending on where you want the funnels to appear, click the buttons below to open the correct editor.
                 </Text>
-                <Button
-                  variant="primary"
-                  url={`https://${shopDomain}/admin/themes/current/editor?template=product&addAppBlockId=${apiKey}/product_page_fbt&target=main`}
-                  target="_blank"
-                >
-                  Open Theme Editor →
-                </Button>
+                
+                <BlockStack gap="300">
+                  <InlineStack align="space-between" blockAlign="center">
+                    <BlockStack gap="100">
+                      <Text as="h3" variant="headingSm">Theme App Blocks (Cart/Product Page)</Text>
+                      <Text as="p" variant="bodySm" tone="subdued">Add the FunnelX block to your product page or cart drawer.</Text>
+                    </BlockStack>
+                    <Button
+                      variant="primary"
+                      url={`https://${shopDomain}/admin/themes/current/editor?context=apps`}
+                      target="_blank"
+                    >
+                      Open Theme Editor
+                    </Button>
+                  </InlineStack>
+
+                  <InlineStack align="space-between" blockAlign="center">
+                    <BlockStack gap="100">
+                      <Text as="h3" variant="headingSm">Checkout Upsells</Text>
+                      <Text as="p" variant="bodySm" tone="subdued">Add the FunnelX block to your checkout flow.</Text>
+                    </BlockStack>
+                    <Button
+                      url={`https://${shopDomain}/admin/settings/checkout/editor`}
+                      target="_blank"
+                    >
+                      Open Checkout Editor
+                    </Button>
+                  </InlineStack>
+
+                  <InlineStack align="space-between" blockAlign="center">
+                    <BlockStack gap="100">
+                      <Text as="h3" variant="headingSm">Post-Purchase Offers</Text>
+                      <Text as="p" variant="bodySm" tone="subdued">Select FunnelX as your Post-Purchase app in checkout settings.</Text>
+                    </BlockStack>
+                    <Button
+                      url={`https://${shopDomain}/admin/settings/checkout`}
+                      target="_blank"
+                    >
+                      Post-Purchase Settings
+                    </Button>
+                  </InlineStack>
+                </BlockStack>
               </BlockStack>
             </Card>
 
