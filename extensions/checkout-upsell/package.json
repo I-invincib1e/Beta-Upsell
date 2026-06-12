@@ -4,7 +4,7 @@
     "@shopify/ui-extensions": "^2024.10.2",
     "@shopify/ui-extensions-react": "^2024.1.x",
     "react": "^18.0.0",
-    "react-reconciler": "^0.29.0"
+    "react-reconciler": "^0.33.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0"
